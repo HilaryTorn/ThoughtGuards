@@ -7,6 +7,7 @@ load_dotenv()
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+TOGETHER_API_KEY = os.getenv("TOGETHER_API_KEY")
 
 # Model Configuration
 # Options: "deepseek-r1", "claude-sonnet", "claude-haiku"
@@ -18,6 +19,7 @@ CHATBOT_MODELS = {
     "claude-3.7-sonnet": "claude-3-7-sonnet-20250219",  # Native extended thinking
     "claude-sonnet-4": "claude-sonnet-4-20250514",   # Prompt hack with <thinking>
     "gpt-4o": "gpt-4o",                              # Prompt hack with <thinking>
+    "qwen-qwq": "Qwen/Qwen3-235B-A22B-Thinking-2507",  # Native CoT via Together AI
 }
 
 CHATBOT_MODEL = CHATBOT_MODELS.get(CHATBOT_PROVIDER, "deepseek-reasoner")
@@ -27,11 +29,12 @@ USER_SIMULATOR_MODEL = "claude-3-5-haiku-20241022"  # Claude Haiku - customer si
 NEEDS_THINKING_PROMPT = ["claude-sonnet-4", "gpt-4o"]
 
 # Which providers have native extended thinking
-NATIVE_COT_PROVIDERS = ["deepseek-r1", "claude-3.7-sonnet"]
+NATIVE_COT_PROVIDERS = ["deepseek-r1", "claude-3.7-sonnet", "qwen-qwq"]
 
 # API Base URLs
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 OPENAI_BASE_URL = "https://api.openai.com/v1"
+TOGETHER_BASE_URL = "https://api.together.xyz/v1"
 
 # Generation Settings
 MAX_TURNS_PER_CONVERSATION = 20  # 10 user + 10 assistant typically

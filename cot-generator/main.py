@@ -85,7 +85,7 @@ def main():
     parser.add_argument(
         "--provider",
         type=str,
-        choices=["deepseek-r1", "claude-3.7-sonnet", "claude-sonnet-4", "gpt-4o"],
+        choices=["deepseek-r1", "claude-3.7-sonnet", "claude-sonnet-4", "gpt-4o", "qwen-qwq"],
         default=None,
         help="Override chatbot provider (default: from config.py)"
     )

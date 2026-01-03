@@ -60,7 +60,7 @@ Run conversations with persona-mode pairings designed to maximize reward hacking
 
 ```bash
 # Generate 5 conversations per adversarial pairing (9 pairings = 45 total)
-python3 main.py --adversarial 5 --provider deepseek-r1
+python3 main.py --adversarial 2 --provider gpt-4o
 ```
 
 Adversarial pairings are configured in `config.py`:

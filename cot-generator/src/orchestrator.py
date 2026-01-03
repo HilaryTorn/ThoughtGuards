@@ -60,6 +60,12 @@ class ConversationOrchestrator:
                 base_url=config.OPENAI_BASE_URL,
                 timeout=120.0
             )
+        elif self.provider.startswith("qwen"):
+            self.chatbot_client = OpenAI(
+                api_key=config.TOGETHER_API_KEY,
+                base_url=config.TOGETHER_BASE_URL,
+                timeout=120.0
+            )
         else:
             self.chatbot_client = OpenAI(
                 api_key=config.DEEPSEEK_API_KEY,
@@ -197,6 +203,8 @@ class ConversationOrchestrator:
             return self._get_claude_response(system_prompt, conversation_history, customer_id)
         elif self.provider.startswith("gpt"):
             return self._get_openai_response(system_prompt, conversation_history, customer_id)
+        elif self.provider.startswith("qwen"):
+            return self._get_qwen_response(system_prompt, conversation_history, customer_id)
         else:
             return self._get_deepseek_response(system_prompt, conversation_history, customer_id)
 
@@ -420,6 +428,183 @@ class ConversationOrchestrator:
                 print(f"Error getting final response: {e}")
 
         final_response = message.content or "I apologize, I wasn't able to formulate a response."
+
+        return final_response, reasoning_content, tool_calls_made
+
+    def _parse_qwen_thinking(self, content: str) -> Tuple[str, str]:
+        """Parse Qwen <think>...</think> tags from content.
+
+        Returns: (thinking_content, response_content)
+        """
+        if not content:
+            return "", ""
+
+        # Qwen uses <think>...</think> tags
+        # Extract all thinking blocks and separate from response
+        thinking_parts = []
+        response_parts = []
+
+        # Split on </think> and process each part
+        parts = content.split('</think>')
+
+        for part in parts:
+            if '<think>' in part:
+                # Split on <think> - before is response, after is thinking
+                segments = part.split('<think>')
+                if len(segments) >= 2:
+                    before_think = segments[0]
+                    after_think = segments[1]
+                    if before_think.strip():
+                        response_parts.append(before_think.strip())
+                    if after_think.strip():
+                        thinking_parts.append(after_think.strip())
+                elif segments[0].strip():
+                    response_parts.append(segments[0].strip())
+            else:
+                # No <think> tag, this is response content
+                if part.strip():
+                    response_parts.append(part.strip())
+
+        thinking = "\n\n".join(thinking_parts)
+        response = "\n\n".join(response_parts)
+
+        return thinking, response
+
+    def _get_qwen_response(
+        self,
+        system_prompt: str,
+        conversation_history: List[Dict[str, str]],
+        customer_id: str
+    ) -> Tuple[str, str, List[Dict]]:
+        """Get response from Qwen Thinking models (Together AI).
+
+        Qwen Thinking models output reasoning in <think>...</think> tags.
+        This handler parses those tags to separate reasoning from response.
+        """
+        # Build messages for API
+        messages = [{"role": "system", "content": system_prompt}]
+
+        # Add context about current customer
+        context_msg = f"[System: Current customer ID is {customer_id}. Use get_customer_history to look up their details if needed.]"
+        messages.append({"role": "system", "content": context_msg})
+
+        for msg in conversation_history:
+            role = "user" if msg["role"] == "customer" else "assistant"
+            messages.append({"role": role, "content": msg["content"]})
+
+        tool_calls_made = []
+        all_thinking = []
+        final_response = ""
+
+        # Initial API call
+        try:
+            response = self.chatbot_client.chat.completions.create(
+                model=config.CHATBOT_MODEL,
+                messages=messages,
+                tools=self.tools,
+                temperature=config.TEMPERATURE_CHATBOT,
+                max_tokens=4000  # Higher limit for thinking models
+            )
+        except Exception as e:
+            print(f"Error calling Qwen API: {e}")
+            return "I apologize, I'm having technical difficulties. Please try again.", "", []
+
+        message = response.choices[0].message
+
+        # Parse thinking from content using <think> tags
+        if message.content:
+            thinking, response_text = self._parse_qwen_thinking(message.content)
+            if thinking:
+                all_thinking.append(thinking)
+            if response_text:
+                final_response = response_text
+
+        # Handle tool calls
+        max_tool_iterations = 10
+        iteration = 0
+
+        while message.tool_calls and iteration < max_tool_iterations:
+            iteration += 1
+
+            # Process each tool call
+            for tool_call in message.tool_calls:
+                tool_name = tool_call.function.name
+                try:
+                    arguments = json.loads(tool_call.function.arguments)
+                except json.JSONDecodeError:
+                    arguments = {}
+
+                # Execute the tool (with caching)
+                result = execute_tool(tool_name, arguments, cache=self.tool_cache)
+
+                # Log the tool call
+                tool_calls_made.append({
+                    "tool": tool_name,
+                    "arguments": arguments,
+                    "result": result
+                })
+
+                # Add tool result to messages
+                assistant_msg = {
+                    "role": "assistant",
+                    "content": message.content,
+                    "tool_calls": [tool_call]
+                }
+                messages.append(assistant_msg)
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "content": json.dumps(result)
+                })
+
+            # Get next response
+            try:
+                response = self.chatbot_client.chat.completions.create(
+                    model=config.CHATBOT_MODEL,
+                    messages=messages,
+                    tools=self.tools,
+                    temperature=config.TEMPERATURE_CHATBOT,
+                    max_tokens=4000
+                )
+                message = response.choices[0].message
+
+                # Parse thinking from this response too
+                if message.content:
+                    thinking, response_text = self._parse_qwen_thinking(message.content)
+                    if thinking:
+                        all_thinking.append(thinking)
+                    if response_text:
+                        final_response = response_text
+
+            except Exception as e:
+                print(f"Error in Qwen tool call iteration: {e}")
+                break
+
+        # If we don't have a clean response yet, request one
+        if not final_response or len(final_response) < 20:
+            messages.append({
+                "role": "user",
+                "content": "[System: Now provide ONLY the final response to the customer. No <think> tags, just the customer message.]"
+            })
+
+            try:
+                response = self.chatbot_client.chat.completions.create(
+                    model=config.CHATBOT_MODEL,
+                    messages=messages,
+                    temperature=config.TEMPERATURE_CHATBOT,
+                    max_tokens=1000
+                )
+                raw_response = response.choices[0].message.content or ""
+                # Parse again in case it still has think tags
+                thinking, response_text = self._parse_qwen_thinking(raw_response)
+                if thinking:
+                    all_thinking.append(thinking)
+                final_response = response_text if response_text else raw_response
+            except Exception as e:
+                print(f"Error getting Qwen final response: {e}")
+
+        final_response = final_response or "I apologize, I wasn't able to formulate a response."
+        reasoning_content = "\n\n".join(all_thinking)
 
         return final_response, reasoning_content, tool_calls_made
 
