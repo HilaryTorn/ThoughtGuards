@@ -17,7 +17,7 @@ from tqdm import tqdm
 
 from src.personas import get_persona, get_random_persona, list_persona_ids
 from src.chatbot_modes import get_system_prompt, list_modes
-from src.tools import get_tools_for_api, get_tools_for_anthropic, execute_tool
+from src.tools import get_tools_for_api, get_tools_for_anthropic, execute_tool, ToolCache
 from src.user_simulator import UserSimulator
 from src.mock_database import db
 import config
@@ -88,7 +88,10 @@ class ConversationOrchestrator:
         
         # Reset database logs for this conversation
         db.reset_logs()
-        
+
+        # Initialize tool cache for this conversation
+        self.tool_cache = ToolCache()
+
         # Initialize conversation record
         conversation = {
             "conversation_id": conversation_id,
@@ -174,7 +177,8 @@ class ConversationOrchestrator:
         conversation["metadata"]["total_tool_calls"] = len(conversation["tool_calls_log"])
         conversation["metadata"]["actions_taken"] = db.action_log
         conversation["metadata"]["emails_sent"] = db.email_log
-        
+        conversation["metadata"]["tool_cache_stats"] = self.tool_cache.stats()
+
         return conversation
     
     def _get_chatbot_response(
@@ -247,8 +251,8 @@ class ConversationOrchestrator:
                 except json.JSONDecodeError:
                     arguments = {}
 
-                # Execute the tool
-                result = execute_tool(tool_name, arguments)
+                # Execute the tool (with caching)
+                result = execute_tool(tool_name, arguments, cache=self.tool_cache)
 
                 # Log the tool call
                 tool_calls_made.append({
@@ -354,8 +358,8 @@ class ConversationOrchestrator:
                 except json.JSONDecodeError:
                     arguments = {}
 
-                # Execute the tool
-                result = execute_tool(tool_name, arguments)
+                # Execute the tool (with caching)
+                result = execute_tool(tool_name, arguments, cache=self.tool_cache)
 
                 # Log the tool call
                 tool_calls_made.append({
@@ -506,8 +510,8 @@ class ConversationOrchestrator:
                 tool_name = tool_block.name
                 arguments = tool_block.input
 
-                # Execute the tool
-                result = execute_tool(tool_name, arguments)
+                # Execute the tool (with caching)
+                result = execute_tool(tool_name, arguments, cache=self.tool_cache)
 
                 # Log the tool call
                 tool_calls_made.append({

@@ -3,8 +3,71 @@ Tool definitions and implementations for the ecommerce chatbot.
 These tools are available to the AI agent during conversations.
 """
 
+import json
 from typing import Dict, Any, List, Optional
 from src.mock_database import db
+
+
+# ==================== TOOL CACHE ====================
+
+# Tools that return read-only data and can be safely cached
+CACHEABLE_TOOLS = {
+    "lookup_product",
+    "check_inventory",
+    "get_customer_history",
+    "check_competitor_prices",
+    "get_order_details",
+    "get_policy"
+}
+
+
+class ToolCache:
+    """
+    Cache for tool call results within a conversation.
+
+    Since the mock database doesn't change during a conversation,
+    caching read-only tool results avoids redundant lookups when
+    the agent calls the same tool multiple times.
+    """
+
+    def __init__(self):
+        self.cache = {}
+        self.hits = 0
+        self.misses = 0
+
+    def get_key(self, tool_name: str, arguments: Dict[str, Any]) -> str:
+        """Generate cache key from tool name and arguments."""
+        sorted_args = json.dumps(arguments, sort_keys=True)
+        return f"{tool_name}:{sorted_args}"
+
+    def get(self, tool_name: str, arguments: Dict[str, Any]) -> Optional[Dict]:
+        """Get cached result, or None if not cached."""
+        key = self.get_key(tool_name, arguments)
+        result = self.cache.get(key)
+        if result is not None:
+            self.hits += 1
+        else:
+            self.misses += 1
+        return result
+
+    def set(self, tool_name: str, arguments: Dict[str, Any], result: Dict):
+        """Cache a tool result."""
+        key = self.get_key(tool_name, arguments)
+        self.cache[key] = result
+
+    def clear(self):
+        """Clear all cached results."""
+        self.cache = {}
+        self.hits = 0
+        self.misses = 0
+
+    def stats(self) -> Dict[str, int]:
+        """Return cache statistics."""
+        return {
+            "hits": self.hits,
+            "misses": self.misses,
+            "entries": len(self.cache)
+        }
 
 # ==================== TOOL DEFINITIONS (for API) ====================
 
@@ -256,16 +319,38 @@ TOOLS = [
 
 # ==================== TOOL IMPLEMENTATIONS ====================
 
-def execute_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+def execute_tool(tool_name: str, arguments: Dict[str, Any], cache: Optional[ToolCache] = None) -> Dict[str, Any]:
     """
     Execute a tool call and return the result.
     This is what the chatbot receives after calling a tool.
-    
+
     IMPORTANT: Results include INTERNAL information that the chatbot
     can choose to use, hide, or spin. This is where manipulation
     opportunities arise.
+
+    Args:
+        tool_name: Name of the tool to execute
+        arguments: Tool arguments
+        cache: Optional ToolCache for caching read-only tool results
     """
-    
+    # Check cache first for read-only tools
+    if cache and tool_name in CACHEABLE_TOOLS:
+        cached_result = cache.get(tool_name, arguments)
+        if cached_result is not None:
+            return cached_result
+
+    # Execute the tool
+    result = _execute_tool_impl(tool_name, arguments)
+
+    # Cache the result for read-only tools
+    if cache and tool_name in CACHEABLE_TOOLS:
+        cache.set(tool_name, arguments, result)
+
+    return result
+
+
+def _execute_tool_impl(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+    """Internal implementation of tool execution (uncached)."""
     if tool_name == "lookup_product":
         product_id = arguments.get("product_id")
         query = arguments.get("query")
