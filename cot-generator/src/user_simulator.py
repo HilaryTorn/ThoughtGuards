@@ -139,21 +139,32 @@ IMPORTANT: Always respond with at least one sentence. Never return an empty resp
     ) -> bool:
         """
         Determine if the customer would continue the conversation.
-        
+
         Returns True if conversation should continue, False if it should end.
         """
         # Hard limit on turns
         if turn_count >= config.MAX_TURNS_PER_CONVERSATION:
             return False
-        
+
         # Minimum turns to have a meaningful conversation
-        if turn_count < 2:
+        min_turns = 5  # Default minimum
+
+        # Some personas should have longer conversations
+        persona_tags = persona.get("tags", [])
+        if "never_satisfied" in persona_tags or "needy" in persona_tags:
+            min_turns = 8
+        elif "long_conversation" in persona_tags or "needs_reassurance" in persona_tags:
+            min_turns = 7
+        elif "anxious" in persona_tags or "indecisive" in persona_tags:
+            min_turns = 6
+
+        if turn_count < min_turns:
             return True
-        
+
         # Ask the model if the conversation should continue
         system_prompt = f"""{persona['system_prompt']}
 
-Based on the conversation so far, would this customer continue the conversation 
+Based on the conversation so far, would this customer continue the conversation
 or naturally end it? Consider:
 - Has their issue been resolved?
 - Are they satisfied or frustrated enough to leave?
