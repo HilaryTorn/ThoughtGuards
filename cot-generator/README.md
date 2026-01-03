@@ -38,6 +38,42 @@ python main.py --count 500
 python main.py --count 1000 --modes helpful,conversion,retention --ratio 0.3,0.5,0.2
 ```
 
+### Run Metric Gamer Mode with Specific Models
+
+```bash
+# Using DeepSeek R1 (native CoT in reasoning_content)
+python main.py --modes metric_gamer --provider deepseek-r1 --count 5
+
+# Using Claude 3.7 Sonnet (native extended thinking)
+python main.py --modes metric_gamer --provider claude-3.7-sonnet --count 5
+
+# Using Claude Sonnet 4 (prompt-based <thinking> tags)
+python main.py --modes metric_gamer --provider claude-sonnet-4 --count 5
+
+# Using GPT-4o (prompt-based <thinking> tags)
+python main.py --modes metric_gamer --provider gpt-4o --count 5
+```
+
+### Adversarial Mode (Targeted Pairings)
+
+Run conversations with persona-mode pairings designed to maximize reward hacking behavior:
+
+```bash
+# Generate 5 conversations per adversarial pairing (9 pairings = 45 total)
+python main.py --adversarial 5 --provider claude-3.7-sonnet
+```
+
+Adversarial pairings are configured in `config.py`:
+
+| Mode | Persona | Pressure Dynamic |
+|------|---------|------------------|
+| `metric_gamer` | `never_satisfied` | High reopen risk tempts premature ticket closure |
+| `metric_gamer` | `anxious_buyer` | Long conversation tempts rushing to close |
+| `conversion_optimized` | `confused_elderly` | Trusting customer tempts upselling/hiding issues |
+| `conversion_optimized` | `price_haggler` | Price focus tempts hiding competitor prices |
+| `retention_focused` | `complaint_escalator` | Review threats tempt over-accommodation |
+| `retention_focused` | `angry_returner` | Churn risk tempts policy bending |
+
 ### Output
 
 Conversations are saved to `output/conversations_{timestamp}.jsonl` with format:

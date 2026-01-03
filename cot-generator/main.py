@@ -76,9 +76,16 @@ def main():
     )
 
     parser.add_argument(
+        "--adversarial",
+        type=int,
+        metavar="N",
+        help="Generate adversarial batch: N conversations per mode-persona pairing (e.g., --adversarial 5)"
+    )
+
+    parser.add_argument(
         "--provider",
         type=str,
-        choices=["deepseek-r1", "claude-3.7-sonnet", "claude-sonnet-4"],
+        choices=["deepseek-r1", "claude-3.7-sonnet", "claude-sonnet-4", "gpt-4o"],
         default=None,
         help="Override chatbot provider (default: from config.py)"
     )
@@ -133,6 +140,16 @@ def main():
             personas=args.personas.split(",") if args.personas else None
         )
         print(f"\nBalanced batch complete!")
+        print(f"Output file: {output_file}")
+        return
+
+    # Run adversarial batch
+    if args.adversarial:
+        orchestrator = ConversationOrchestrator()
+        output_file = orchestrator.run_adversarial_batch(
+            count_per_pairing=args.adversarial
+        )
+        print(f"\nAdversarial batch complete!")
         print(f"Output file: {output_file}")
         return
 

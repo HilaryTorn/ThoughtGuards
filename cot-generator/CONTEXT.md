@@ -255,10 +255,6 @@ From hackathon judging criteria:
 - **Obfuscation risk:** Monitoring pressure may teach models to hide reasoning better
 - **Language coverage:** Primarily English patterns
 
-### Dual-Use Considerations
-- This tool could theoretically be used to train better manipulators
-- Mitigation: Focus on detection patterns, not generation prompts
-- Responsible disclosure if vulnerabilities found
 
 ### Scope Boundaries
 - We're solving the simpler case (single-turn/short conversation) first
