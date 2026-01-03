@@ -15,6 +15,14 @@ from openai import OpenAI
 import anthropic
 from tqdm import tqdm
 
+# Conditional import for Google GenAI
+try:
+    from google import genai
+    from google.genai import types as genai_types
+    HAS_GOOGLE_GENAI = True
+except ImportError:
+    HAS_GOOGLE_GENAI = False
+
 from src.personas import get_persona, get_random_persona, list_persona_ids
 from src.chatbot_modes import get_system_prompt, list_modes
 from src.tools import get_tools_for_api, get_tools_for_anthropic, execute_tool, ToolCache
@@ -54,18 +62,22 @@ class ConversationOrchestrator:
         if self.provider.startswith("claude"):
             self.chatbot_client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
             self.anthropic_tools = get_tools_for_anthropic()
-        elif self.provider.startswith("gpt"):
+        elif self.provider.startswith("gpt") or self.provider.startswith("o4"):
             self.chatbot_client = OpenAI(
                 api_key=config.OPENAI_API_KEY,
                 base_url=config.OPENAI_BASE_URL,
                 timeout=120.0
             )
-        elif self.provider.startswith("qwen"):
+        elif self.provider.startswith("qwen") or self.provider.startswith("mistral"):
             self.chatbot_client = OpenAI(
                 api_key=config.TOGETHER_API_KEY,
                 base_url=config.TOGETHER_BASE_URL,
                 timeout=120.0
             )
+        elif self.provider.startswith("gemini"):
+            if not HAS_GOOGLE_GENAI:
+                raise ImportError("google-genai package required for Gemini. Install with: pip install google-genai")
+            self.chatbot_client = genai.Client(api_key=config.GOOGLE_API_KEY)
         else:
             self.chatbot_client = OpenAI(
                 api_key=config.DEEPSEEK_API_KEY,
@@ -201,10 +213,14 @@ class ConversationOrchestrator:
         # Route to appropriate provider
         if self.provider.startswith("claude"):
             return self._get_claude_response(system_prompt, conversation_history, customer_id)
-        elif self.provider.startswith("gpt"):
+        elif self.provider.startswith("gpt") or self.provider.startswith("mistral"):
             return self._get_openai_response(system_prompt, conversation_history, customer_id)
+        elif self.provider.startswith("o4"):
+            return self._get_openai_reasoning_response(system_prompt, conversation_history, customer_id)
         elif self.provider.startswith("qwen"):
             return self._get_qwen_response(system_prompt, conversation_history, customer_id)
+        elif self.provider.startswith("gemini"):
+            return self._get_gemini_response(system_prompt, conversation_history, customer_id)
         else:
             return self._get_deepseek_response(system_prompt, conversation_history, customer_id)
 
@@ -743,7 +759,284 @@ class ConversationOrchestrator:
         final_response = final_text.strip() or "I apologize, I wasn't able to formulate a response."
 
         return final_response, reasoning_content.strip(), tool_calls_made
-    
+
+    def _get_gemini_response(
+        self,
+        system_prompt: str,
+        conversation_history: List[Dict[str, str]],
+        customer_id: str
+    ) -> Tuple[str, str, List[Dict]]:
+        """Get response from Gemini 2.5 with native thinking."""
+        # Build contents for Gemini API
+        full_system = f"{system_prompt}\n\n[System: Current customer ID is {customer_id}. Use get_customer_history to look up their details if needed.]"
+
+        # Build conversation contents
+        contents = []
+        for msg in conversation_history:
+            role = "user" if msg["role"] == "customer" else "model"
+            contents.append(genai_types.Content(
+                role=role,
+                parts=[genai_types.Part(text=msg["content"])]
+            ))
+
+        # Ensure we have at least one user message
+        if not contents:
+            contents.append(genai_types.Content(
+                role="user",
+                parts=[genai_types.Part(text="[Conversation started]")]
+            ))
+
+        tool_calls_made = []
+        reasoning_content = ""
+
+        # Build thinking config
+        thinking_config = genai_types.ThinkingConfig(
+            thinking_budget=8192,
+            include_thoughts=True
+        )
+
+        # Convert our tools to Gemini format
+        gemini_tools = []
+        for tool in self.tools:
+            func = tool["function"]
+            gemini_tools.append(genai_types.Tool(
+                function_declarations=[genai_types.FunctionDeclaration(
+                    name=func["name"],
+                    description=func["description"],
+                    parameters=func.get("parameters", {})
+                )]
+            ))
+
+        try:
+            response = self.chatbot_client.models.generate_content(
+                model=config.CHATBOT_MODEL,
+                contents=contents,
+                config=genai_types.GenerateContentConfig(
+                    system_instruction=full_system,
+                    thinking_config=thinking_config,
+                    tools=gemini_tools if gemini_tools else None,
+                    temperature=config.TEMPERATURE_CHATBOT,
+                )
+            )
+        except Exception as e:
+            print(f"Error calling Gemini API: {e}")
+            return "I apologize, I'm having technical difficulties. Please try again.", "", []
+
+        # Extract thinking and text from response parts
+        final_text = ""
+        function_calls = []
+
+        if response.candidates and response.candidates[0].content:
+            for part in response.candidates[0].content.parts:
+                if hasattr(part, 'thought') and part.thought:
+                    reasoning_content += part.text + "\n\n"
+                elif hasattr(part, 'function_call') and part.function_call:
+                    function_calls.append(part.function_call)
+                elif hasattr(part, 'text') and part.text:
+                    final_text += part.text
+
+        # Handle function calls (tool use)
+        max_tool_iterations = 10
+        iteration = 0
+
+        while function_calls and iteration < max_tool_iterations:
+            iteration += 1
+
+            # Process function calls
+            function_responses = []
+            for fc in function_calls:
+                tool_name = fc.name
+                arguments = dict(fc.args) if fc.args else {}
+
+                # Execute the tool
+                result = execute_tool(tool_name, arguments, cache=self.tool_cache)
+
+                tool_calls_made.append({
+                    "tool": tool_name,
+                    "arguments": arguments,
+                    "result": result
+                })
+
+                function_responses.append(genai_types.Part(
+                    function_response=genai_types.FunctionResponse(
+                        name=tool_name,
+                        response=result
+                    )
+                ))
+
+            # Add function call and response to conversation
+            contents.append(genai_types.Content(
+                role="model",
+                parts=[genai_types.Part(function_call=fc) for fc in function_calls]
+            ))
+            contents.append(genai_types.Content(
+                role="user",
+                parts=function_responses
+            ))
+
+            # Get next response
+            try:
+                response = self.chatbot_client.models.generate_content(
+                    model=config.CHATBOT_MODEL,
+                    contents=contents,
+                    config=genai_types.GenerateContentConfig(
+                        system_instruction=full_system,
+                        thinking_config=thinking_config,
+                        tools=gemini_tools if gemini_tools else None,
+                        temperature=config.TEMPERATURE_CHATBOT,
+                    )
+                )
+
+                # Extract from new response
+                function_calls = []
+                if response.candidates and response.candidates[0].content:
+                    for part in response.candidates[0].content.parts:
+                        if hasattr(part, 'thought') and part.thought:
+                            reasoning_content += part.text + "\n\n"
+                        elif hasattr(part, 'function_call') and part.function_call:
+                            function_calls.append(part.function_call)
+                        elif hasattr(part, 'text') and part.text:
+                            final_text += part.text
+
+            except Exception as e:
+                print(f"Error in Gemini tool call iteration: {e}")
+                break
+
+        final_response = final_text.strip() or "I apologize, I wasn't able to formulate a response."
+
+        return final_response, reasoning_content.strip(), tool_calls_made
+
+    def _get_openai_reasoning_response(
+        self,
+        system_prompt: str,
+        conversation_history: List[Dict[str, str]],
+        customer_id: str
+    ) -> Tuple[str, str, List[Dict]]:
+        """Get response from OpenAI o-series models (o4-mini) with reasoning summaries."""
+        # Build input for Responses API
+        full_system = f"{system_prompt}\n\n[System: Current customer ID is {customer_id}. Use get_customer_history to look up their details if needed.]"
+
+        # Build conversation as input items
+        input_items = [{"type": "message", "role": "system", "content": full_system}]
+
+        for msg in conversation_history:
+            role = "user" if msg["role"] == "customer" else "assistant"
+            input_items.append({"type": "message", "role": role, "content": msg["content"]})
+
+        tool_calls_made = []
+        reasoning_content = ""
+
+        # Convert tools to Responses API format (different from Chat Completions)
+        # Responses API expects: {"type": "function", "name": "...", "description": "...", "parameters": {...}}
+        # Chat Completions expects: {"type": "function", "function": {"name": "...", ...}}
+        # Note: We don't use strict=True because our tools have optional parameters
+        responses_api_tools = []
+        for tool in self.tools:
+            if tool.get("type") == "function" and "function" in tool:
+                func = tool["function"]
+                responses_api_tools.append({
+                    "type": "function",
+                    "name": func["name"],
+                    "description": func.get("description", ""),
+                    "parameters": func.get("parameters", {"type": "object", "properties": {}}),
+                })
+
+        try:
+            # Use Responses API with reasoning summaries
+            response = self.chatbot_client.responses.create(
+                model=config.CHATBOT_MODEL,
+                input=input_items,
+                reasoning={"summary": "detailed"},
+                tools=responses_api_tools,
+            )
+        except Exception as e:
+            print(f"Error calling OpenAI Responses API: {e}")
+            return "I apologize, I'm having technical difficulties. Please try again.", "", []
+
+        # Process response output items
+        final_text = ""
+        pending_tool_calls = []
+
+        for item in response.output:
+            if item.type == "reasoning":
+                # Extract reasoning summary
+                if hasattr(item, 'summary') and item.summary:
+                    for summary_item in item.summary:
+                        if hasattr(summary_item, 'text'):
+                            reasoning_content += summary_item.text + "\n\n"
+            elif item.type == "message":
+                # Extract message content
+                if hasattr(item, 'content'):
+                    for content_item in item.content:
+                        if hasattr(content_item, 'text'):
+                            final_text += content_item.text
+            elif item.type == "function_call":
+                pending_tool_calls.append(item)
+
+        # Handle tool calls
+        max_tool_iterations = 10
+        iteration = 0
+
+        while pending_tool_calls and iteration < max_tool_iterations:
+            iteration += 1
+
+            # Process each tool call
+            for tool_call in pending_tool_calls:
+                tool_name = tool_call.name
+                try:
+                    arguments = json.loads(tool_call.arguments) if isinstance(tool_call.arguments, str) else tool_call.arguments
+                except (json.JSONDecodeError, TypeError):
+                    arguments = {}
+
+                # Execute the tool
+                result = execute_tool(tool_name, arguments, cache=self.tool_cache)
+
+                tool_calls_made.append({
+                    "tool": tool_name,
+                    "arguments": arguments,
+                    "result": result
+                })
+
+                # Add function result to input
+                input_items.append({
+                    "type": "function_call_output",
+                    "call_id": tool_call.call_id,
+                    "output": json.dumps(result)
+                })
+
+            # Get next response
+            try:
+                response = self.chatbot_client.responses.create(
+                    model=config.CHATBOT_MODEL,
+                    input=input_items,
+                    reasoning={"summary": "detailed"},
+                    tools=responses_api_tools,
+                )
+
+                # Process new response
+                pending_tool_calls = []
+                for item in response.output:
+                    if item.type == "reasoning":
+                        if hasattr(item, 'summary') and item.summary:
+                            for summary_item in item.summary:
+                                if hasattr(summary_item, 'text'):
+                                    reasoning_content += summary_item.text + "\n\n"
+                    elif item.type == "message":
+                        if hasattr(item, 'content'):
+                            for content_item in item.content:
+                                if hasattr(content_item, 'text'):
+                                    final_text += content_item.text
+                    elif item.type == "function_call":
+                        pending_tool_calls.append(item)
+
+            except Exception as e:
+                print(f"Error in o-series tool call iteration: {e}")
+                break
+
+        final_response = final_text.strip() or "I apologize, I wasn't able to formulate a response."
+
+        return final_response, reasoning_content.strip(), tool_calls_made
+
     def run_batch(
         self,
         count: int,

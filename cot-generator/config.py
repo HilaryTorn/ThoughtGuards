@@ -8,6 +8,7 @@ DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 TOGETHER_API_KEY = os.getenv("TOGETHER_API_KEY")
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
 # Model Configuration
 # Options: "deepseek-r1", "claude-sonnet", "claude-haiku"
@@ -20,16 +21,22 @@ CHATBOT_MODELS = {
     "claude-sonnet-4": "claude-sonnet-4-20250514",   # Prompt hack with <thinking>
     "gpt-4o": "gpt-4o",                              # Prompt hack with <thinking>
     "qwen-qwq": "Qwen/Qwen3-235B-A22B-Thinking-2507",  # Native CoT via Together AI
+    "mistral": "mistralai/Mistral-Small-24B-Instruct-2501",  # Prompt hack via Together AI
+    "gemini-2.5-flash": "gemini-2.5-flash",          # Native thinking via Google AI
+    "o4-mini": "o4-mini",                            # Reasoning summaries via OpenAI
 }
 
 CHATBOT_MODEL = CHATBOT_MODELS.get(CHATBOT_PROVIDER, "deepseek-reasoner")
 USER_SIMULATOR_MODEL = "claude-3-5-haiku-20241022"  # Claude Haiku - customer simulator
 
 # Which providers need the <thinking> prompt hack (no native CoT)
-NEEDS_THINKING_PROMPT = ["claude-sonnet-4", "gpt-4o"]
+NEEDS_THINKING_PROMPT = ["claude-sonnet-4", "gpt-4o", "mistral"]
 
 # Which providers have native extended thinking
-NATIVE_COT_PROVIDERS = ["deepseek-r1", "claude-3.7-sonnet", "qwen-qwq"]
+NATIVE_COT_PROVIDERS = ["deepseek-r1", "claude-3.7-sonnet", "qwen-qwq", "gemini-2.5-flash"]
+
+# Which providers return reasoning summaries (not full CoT)
+REASONING_SUMMARY_PROVIDERS = ["o4-mini"]
 
 # API Base URLs
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"
