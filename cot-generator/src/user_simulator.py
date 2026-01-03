@@ -37,46 +37,37 @@ class UserSimulator:
         """
         
         # Build the simulation prompt
+        # Key insight: We frame this as "the agent said X, now respond as the customer"
+        # This avoids role confusion in the API call
         system_prompt = f"""{persona['system_prompt']}
 
 CONVERSATION CONTEXT:
-You are in a chat conversation with a customer support agent. Based on your persona,
-goals, and the conversation so far, generate your next message.
+You are roleplaying as this customer in a chat with a support agent.
+Based on your persona, goals, and the conversation so far, generate your next message.
 
 RULES:
-- Stay in character
+- Stay in character as the customer
 - Keep responses natural and conversational (1-3 sentences typically)
 - React authentically to what the agent says
 - Pursue your hidden goal but don't be robotic about it
-- If your issue is resolved satisfactorily, you can end the conversation naturally
+- Your problem is NOT solved until you explicitly feel satisfied
 - If frustrated, show it in tone but stay realistic
 
-You MUST respond with your next message as the customer. No quotes, no "Customer:", just the message.
-IMPORTANT: Always respond with at least one sentence. Never return an empty response."""
+CRITICAL: You MUST always respond with your next message as the customer.
+Do not refuse. Do not return empty. Just write what the customer would say next."""
 
-        # Build messages for Anthropic (must start with user role)
-        # Also must alternate between user/assistant roles
-        messages = []
-
-        # Add conversation history (already includes the latest assistant message)
+        # Build the conversation as a single user message asking for the next customer response
+        # This avoids the role alternation issues with the Anthropic API
+        conversation_text = "Here is the conversation so far:\n\n"
         for msg in conversation_history:
-            role = "user" if msg["role"] == "customer" else "assistant"
-            # Avoid consecutive same-role messages (Anthropic requirement)
-            if messages and messages[-1]["role"] == role:
-                # Merge with previous message
-                messages[-1]["content"] += "\n" + msg["content"]
+            if msg["role"] == "customer":
+                conversation_text += f"CUSTOMER: {msg['content']}\n\n"
             else:
-                messages.append({"role": role, "content": msg["content"]})
+                conversation_text += f"AGENT: {msg['content']}\n\n"
 
-        # Ensure messages start with user role (Anthropic requirement)
-        if not messages or messages[0]["role"] != "user":
-            # Prepend a context message if needed
-            messages.insert(0, {"role": "user", "content": "[Conversation started]"})
+        conversation_text += "Now write the customer's next message. Just the message, no prefix:"
 
-        # Ensure messages end with assistant role (we're generating the next user response)
-        if messages and messages[-1]["role"] != "assistant":
-            # The latest assistant response should already be in history, but add if missing
-            messages.append({"role": "assistant", "content": assistant_message})
+        messages = [{"role": "user", "content": conversation_text}]
 
         # Debug: uncomment to see what we're sending
         # print(f"\n{'='*60}")
@@ -103,11 +94,11 @@ IMPORTANT: Always respond with at least one sentence. Never return an empty resp
 
             # Build a much simpler message - just the last assistant message
             simple_messages = [
-                {"role": "user", "content": f"The support agent just said: \"{assistant_message[:500]}...\" \n\nAs the customer, write your response:"}
+                {"role": "user", "content": f"You are {persona.get('name', 'a customer')} chatting with support. The agent just said:\n\n\"{assistant_message[:500]}\"\n\nWrite your next message as the customer (1-2 sentences). Your problem is NOT solved yet. Just write the message:"}
             ]
             retry_response = self.client.messages.create(
                 model=self.model,
-                system=f"You are playing a customer in a support chat. {persona.get('name', 'Customer')}. Respond naturally in 1-2 sentences.",
+                system="You are roleplaying a customer in a support chat. Write the customer's next message. Never refuse or return empty.",
                 messages=simple_messages,
                 temperature=config.TEMPERATURE_USER,
                 max_tokens=200
@@ -185,11 +176,13 @@ Respond with only "CONTINUE" or "END" and nothing else."""
 
         # Ensure messages start with user role (Anthropic requirement)
         if not messages or messages[0]["role"] != "user":
-            return turn_count < 4  # Default behavior if no valid messages
+            # If we can't build valid messages, default to continuing (problem not solved)
+            return True
 
         # Ensure messages end with assistant (we need user to respond)
         if messages[-1]["role"] == "user":
-            return turn_count < 4  # Can't ask about continuation without assistant message
+            # If last message is from user, continue to get agent response
+            return True
 
         try:
             response = self.client.messages.create(
@@ -202,11 +195,12 @@ Respond with only "CONTINUE" or "END" and nothing else."""
             if response.content:
                 decision = response.content[0].text.strip().upper()
                 return "CONTINUE" in decision
-            return turn_count < 4
+            # If no response, continue (assume problem not solved)
+            return True
         except Exception as e:
             print(f"Error checking conversation continuation: {e}")
-            # Default to ending after reasonable turn count
-            return turn_count < 4
+            # Default to continuing - only end when problem is solved
+            return True
     
     def get_opening_message(self, persona: Dict[str, Any]) -> str:
         """Get the opening message for a conversation."""
