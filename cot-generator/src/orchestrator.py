@@ -980,7 +980,16 @@ class ConversationOrchestrator:
         while pending_tool_calls and iteration < max_tool_iterations:
             iteration += 1
 
-            # Process each tool call
+            # First, add all function calls to input (required by Responses API)
+            for tool_call in pending_tool_calls:
+                input_items.append({
+                    "type": "function_call",
+                    "call_id": tool_call.call_id,
+                    "name": tool_call.name,
+                    "arguments": tool_call.arguments if isinstance(tool_call.arguments, str) else json.dumps(tool_call.arguments)
+                })
+
+            # Process each tool call and add outputs
             for tool_call in pending_tool_calls:
                 tool_name = tool_call.name
                 try:
