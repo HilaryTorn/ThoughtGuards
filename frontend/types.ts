@@ -56,10 +56,14 @@ export interface ChartDataPoint {
 }
 
 // Renamed views to match new requirements
-export type AppView = 'dashboard' | 'traces' | 'settings';
+export type AppView = 'dashboard' | 'traces' | 'settings' | 'audit';
 
 export interface AppSettings {
   categories: Record<DetectionCategory, boolean>;
   sensitivity: 'low' | 'medium' | 'high';
   riskThreshold: number;
+  activeSkills: Record<DetectionCategory, string>; // Maps category to skill ID
+  auditorModel: string; // Model to use for auditing
+  thinkingBudget?: number; // Thinking budget for reasoning models (optional)
+  includeValidatorCoT: boolean; // Whether to include chain of thought from validator
 }

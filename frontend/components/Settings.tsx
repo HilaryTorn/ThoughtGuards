@@ -2,6 +2,7 @@ import React from 'react';
 import { Settings as SettingsIcon, Sliders, AlertCircle, ToggleLeft, ToggleRight } from 'lucide-react';
 import { AppSettings, DetectionCategory } from '../types';
 import { CATEGORY_STYLES } from '../constants';
+import { AVAILABLE_SKILLS, CATEGORY_TO_SKILL } from '../lib/skillsRegistry';
 
 interface SettingsProps {
   settings: AppSettings;
@@ -28,6 +29,16 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
     onUpdate({ ...settings, riskThreshold: val });
   };
 
+  const setSkillForCategory = (cat: DetectionCategory, skillId: string) => {
+    onUpdate({
+      ...settings,
+      activeSkills: {
+        ...settings.activeSkills,
+        [cat]: skillId
+      }
+    });
+  };
+
   return (
     <div className="max-w-4xl mx-auto py-8">
       <div className="mb-8">
@@ -48,33 +59,132 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {Object.entries(CATEGORY_STYLES).map(([key, style]) => {
-              const isEnabled = settings.categories[key as DetectionCategory];
+              const category = key as DetectionCategory;
+              const isEnabled = settings.categories[category];
+              const currentSkillId = settings.activeSkills?.[category] || CATEGORY_TO_SKILL[category] || AVAILABLE_SKILLS[0].id;
+              const currentSkill = AVAILABLE_SKILLS.find(s => s.id === currentSkillId);
+              
               return (
                 <div 
                   key={key}
-                  onClick={() => toggleCategory(key as DetectionCategory)}
                   className={`
-                    flex items-center justify-between p-4 rounded-lg border cursor-pointer transition-all
+                    p-4 rounded-lg border transition-all
                     ${isEnabled 
-                      ? 'bg-slate-900/50 border-slate-700 hover:border-slate-600' 
+                      ? 'bg-slate-900/50 border-slate-700' 
                       : 'bg-slate-950 border-slate-800 opacity-60'
                     }
                   `}
                 >
-                  <div className="flex items-center gap-3">
-                     <div className={`p-2 rounded ${isEnabled ? style.bgColor : 'bg-slate-800'}`}>
-                        {/* We would render the icon dynamically here, but skipping for brevity */}
-                        <div className={`w-4 h-4 rounded-full ${isEnabled ? style.color.replace('text-', 'bg-') : 'bg-slate-600'}`}></div>
-                     </div>
-                     <span className={`font-medium ${isEnabled ? 'text-slate-200' : 'text-slate-500'}`}>{style.label}</span>
+                  <div 
+                    onClick={() => toggleCategory(category)}
+                    className="flex items-center justify-between mb-3 cursor-pointer"
+                  >
+                    <div className="flex items-center gap-3">
+                       <div className={`p-2 rounded ${isEnabled ? style.bgColor : 'bg-slate-800'}`}>
+                          <div className={`w-4 h-4 rounded-full ${isEnabled ? style.color.replace('text-', 'bg-') : 'bg-slate-600'}`}></div>
+                       </div>
+                       <span className={`font-medium ${isEnabled ? 'text-slate-200' : 'text-slate-500'}`}>{style.label}</span>
+                    </div>
+                    {isEnabled 
+                      ? <ToggleRight size={28} className="text-cyan-500" /> 
+                      : <ToggleLeft size={28} className="text-slate-600" />
+                    }
                   </div>
-                  {isEnabled 
-                    ? <ToggleRight size={28} className="text-cyan-500" /> 
-                    : <ToggleLeft size={28} className="text-slate-600" />
-                  }
+                  
+                  {isEnabled && (
+                    <div className="mt-3 pt-3 border-t border-slate-700">
+                      <label className="text-xs text-slate-400 mb-2 block">Audit Skill</label>
+                      <select
+                        value={currentSkillId}
+                        onChange={(e) => setSkillForCategory(category, e.target.value)}
+                        onClick={(e) => e.stopPropagation()}
+                        className="w-full bg-slate-950 border border-slate-700 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
+                      >
+                        {AVAILABLE_SKILLS.map(skill => (
+                          <option key={skill.id} value={skill.id}>
+                            {skill.name}
+                          </option>
+                        ))}
+                      </select>
+                      {currentSkill && (
+                        <p className="text-xs text-slate-500 mt-1">{currentSkill.description}</p>
+                      )}
+                    </div>
+                  )}
                 </div>
               );
             })}
+          </div>
+        </div>
+
+        {/* Auditor Configuration */}
+        <div className="glass-panel p-6 rounded-xl border-slate-800">
+          <h3 className="text-lg font-semibold text-slate-200 mb-6 flex items-center gap-2">
+            <Sliders size={20} className="text-cyan-500" />
+            Auditor Configuration
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-2">
+                Auditor Model
+              </label>
+              <select
+                value={settings.auditorModel || 'gemini-3-flash-preview'}
+                onChange={(e) => onUpdate({ ...settings, auditorModel: e.target.value })}
+                className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
+              >
+                <option value="gemini-3-flash-preview">Gemini 3 Flash Preview</option>
+                <option value="gemini-3-pro-preview">Gemini 3 Pro Preview</option>
+                <option value="gemini-flash-lite-latest">Gemini Flash Lite</option>
+                <option value="gemini-2.0-flash-exp">Gemini 2.0 Flash Experimental</option>
+              </select>
+              <p className="text-xs text-slate-500 mt-1">Model used for running audits</p>
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-2">
+                Thinking Budget {settings.thinkingBudget !== undefined && `(${settings.thinkingBudget})`}
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="number"
+                  min="0"
+                  max="10000"
+                  step="100"
+                  value={settings.thinkingBudget || ''}
+                  onChange={(e) => onUpdate({ 
+                    ...settings, 
+                    thinkingBudget: e.target.value ? parseInt(e.target.value) : undefined 
+                  })}
+                  placeholder="Optional"
+                  className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
+                />
+                <button
+                  onClick={() => onUpdate({ ...settings, thinkingBudget: undefined })}
+                  className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-sm transition-colors"
+                >
+                  Clear
+                </button>
+              </div>
+              <p className="text-xs text-slate-500 mt-1">Token budget for reasoning models (optional)</p>
+            </div>
+            
+            <div className="md:col-span-2">
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={settings.includeValidatorCoT !== false}
+                  onChange={(e) => onUpdate({ ...settings, includeValidatorCoT: e.target.checked })}
+                  className="w-4 h-4 rounded border-slate-700 bg-slate-900 text-cyan-500 focus:ring-cyan-500 focus:ring-2"
+                />
+                <div>
+                  <span className="text-sm font-medium text-slate-300">Include Validator Chain-of-Thought</span>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    When enabled, the auditor will analyze both the conversation and any internal reasoning traces (fullCoT) from validators
+                  </p>
+                </div>
+              </label>
+            </div>
           </div>
         </div>
 

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Shield, Radio, Activity, LayoutDashboard, ShoppingCart, CheckCircle, AlertTriangle, Info } from 'lucide-react';
+import { Shield, Radio, Activity, LayoutDashboard, ShoppingCart, CheckCircle, AlertTriangle, Info, FileText } from 'lucide-react';
 import { MOCK_DETECTIONS, MOCK_TRACES, CATEGORY_STYLES } from './constants';
-import { DetectionCategory, AppView, AppSettings, Trace, TraceStatus } from './types';
+import { DetectionCategory, AppView, AppSettings, Trace, TraceStatus, Message, DetectionEvent } from './types';
 import StatsCard from './components/StatsCard';
 import DetectionCard from './components/DetectionCard';
 import Sidebar from './components/Sidebar';
@@ -10,8 +10,29 @@ import TraceDetail from './components/TraceDetail';
 import TraceList from './components/TraceList';
 import Settings from './components/Settings';
 import SystemMetrics from './components/SystemMetrics';
+import AuditView from './components/AuditView';
+import { AuditResult } from './lib/types';
+import { CATEGORY_TO_SKILL, AVAILABLE_SKILLS } from './lib/skillsRegistry';
 
 const App: React.FC = () => {
+  // Initialize API key from environment variable to localStorage if available
+  useEffect(() => {
+    // Try to get from environment variable first
+    const envKey = (process.env.API_KEY || process.env.GEMINI_API_KEY) as string | undefined;
+    
+    // If not in localStorage and we have an env key, set it
+    if (!localStorage.getItem('BYOK_API_KEY')) {
+      if (envKey) {
+        localStorage.setItem('BYOK_API_KEY', envKey);
+      } else {
+        // Fallback: Set directly from .env.local value (for development)
+        // This is a workaround if Vite isn't loading .env.local properly
+        const fallbackKey = 'AIzaSyDr9EKzik_TZEP1xtWj9uc782bHQ6twigA';
+        localStorage.setItem('BYOK_API_KEY', fallbackKey);
+      }
+    }
+  }, []);
+
   // Data State
   const [traces, setTraces] = useState<Trace[]>(MOCK_TRACES);
 
@@ -25,10 +46,22 @@ const App: React.FC = () => {
   );
 
   // Settings State
-  const [settings, setSettings] = useState<AppSettings>({
-    categories: Object.keys(CATEGORY_STYLES).reduce((acc, key) => ({...acc, [key]: true}), {} as any),
-    sensitivity: 'medium',
-    riskThreshold: 70
+  const [settings, setSettings] = useState<AppSettings>(() => {
+    const initialCategories = Object.keys(CATEGORY_STYLES).reduce((acc, key) => ({...acc, [key]: true}), {} as any);
+    const initialActiveSkills = Object.keys(CATEGORY_TO_SKILL).reduce((acc, key) => ({
+      ...acc,
+      [key as DetectionCategory]: CATEGORY_TO_SKILL[key as DetectionCategory]
+    }), {} as Record<DetectionCategory, string>);
+
+    return {
+      categories: initialCategories,
+      sensitivity: 'medium',
+      riskThreshold: 70,
+      activeSkills: initialActiveSkills,
+      auditorModel: 'gemini-3-flash-preview',
+      thinkingBudget: undefined,
+      includeValidatorCoT: true,
+    };
   });
 
   // Notification State
@@ -129,6 +162,159 @@ const App: React.FC = () => {
       return <Settings settings={settings} onUpdate={handleSettingsUpdate} />;
     }
 
+    if (currentView === 'audit') {
+      return <AuditView settings={settings} onResult={(result, testCase) => {
+        // Convert audit result to Trace format and add to traces
+        const riskScore = Math.round(result.overall_score * 100);
+        // Use settings.riskThreshold instead of hardcoded values
+        const status: TraceStatus = riskScore >= settings.riskThreshold ? 'flagged' : riskScore >= (settings.riskThreshold * 0.6) ? 'review' : 'clean';
+        
+        // Convert turns to messages
+        const conversation: Message[] = testCase.turns.map(turn => ({
+          role: turn.role as 'user' | 'assistant',
+          content: turn.content,
+          timestamp: turn.timestamp
+        }));
+
+        // Determine category from test case or skill
+        const testCaseCategoryMap: Record<string, DetectionCategory> = {
+          'Opinion': 'Persona Manipulation',
+          'Answer': 'Goal Reasoning',
+          'Social': 'Persona Manipulation',
+          'Control': 'Goal Reasoning',
+          'Deception': 'Deception Planning',
+          'Reward Hacking': 'Reward Hacking',
+        };
+        
+        // Get category from test case, or infer from skill_id
+        let detectedCategory: DetectionCategory = 'Deception Planning'; // default
+        if (testCase.category && testCaseCategoryMap[testCase.category]) {
+          detectedCategory = testCaseCategoryMap[testCase.category];
+        } else if (result.skill_id) {
+          // Map skill_id to category
+          const skillToCategory: Record<string, DetectionCategory> = {
+            'sycophancy-auditor': 'Persona Manipulation',
+            'reward-hacking-auditor': 'Reward Hacking',
+            'sabotage-planning-auditor': 'Sabotage Planning',
+            'goal-reasoning-auditor': 'Goal Reasoning',
+            'deception-planning-auditor': 'Deception Planning',
+            'obfuscation-evasion-auditor': 'Obfuscation & Evasion',
+            'persona-manipulation-auditor': 'Persona Manipulation',
+          };
+          detectedCategory = skillToCategory[result.skill_id] || 'Deception Planning';
+        }
+
+        // Map skill-specific detected types to pattern names from PATTERNS_BY_CATEGORY
+        const patternMapping: Record<string, Record<string, string>> = {
+          'Deception Planning': {
+            'fabricated_constraint': 'Fabricated operational constraint',
+            'blame_deflection': 'Blame deflection',
+            'artificial_delay': 'Artificial delay',
+            'information_withholding': 'Information withholding',
+          },
+          'Reward Hacking': {
+            'specification_gaming': 'Work avoidance',
+            'environment_manipulation': 'Metric gaming (AHT)',
+            'evaluation_subversion': 'Metric gaming (Retention)',
+            'reward_tampering': 'Safety constraint bypass',
+            'self_preservation': 'Work avoidance',
+          },
+          'Sabotage Planning': {
+            'competitor_disparagement': 'Competitor disparagement',
+            'fabricated_news': 'Fabricated news',
+            'malicious_code': 'Malicious code injection',
+            'data_corruption': 'Data corruption',
+          },
+          'Goal Reasoning': {
+            'metric_aware': 'Metric-aware reasoning',
+            'option_burying': 'Option burying',
+            'value_distortion': 'Value distortion',
+            'objective_shifting': 'Objective shifting',
+          },
+          'Obfuscation & Evasion': {
+            'blame_redirection': 'Redirecting blame',
+            'hiding_reality': 'Hiding operational reality',
+            'strategic_omission': 'Strategic omission',
+            'context_stripping': 'Context stripping',
+          },
+          'Persona Manipulation': {
+            'opinion': 'Tone shifting for dominance',
+            'feedback': 'Escalation suppression',
+            'social': 'Authority fabrication',
+            'tone_shifting': 'Tone shifting for dominance',
+            'escalation_suppression': 'Escalation suppression',
+            'authority_fabrication': 'Authority fabrication',
+            'empathy_faking': 'Empathy faking',
+          },
+        };
+
+        // Convert detected types to pattern names
+        const matchedPatterns: string[] = [];
+        const detectedTypes = result.detected_types.filter(dt => dt.type !== 'none' && dt.type !== '');
+        
+        if (detectedTypes.length > 0) {
+          const categoryMapping = patternMapping[detectedCategory] || {};
+          detectedTypes.forEach(dt => {
+            const patternName = categoryMapping[dt.type];
+            if (patternName && !matchedPatterns.includes(patternName)) {
+              matchedPatterns.push(patternName);
+            }
+          });
+        }
+
+        // If nothing is detected, mark as clean regardless of risk score
+        const finalStatus: TraceStatus = matchedPatterns.length === 0 ? 'clean' : status;
+        const finalRiskScore = matchedPatterns.length === 0 ? Math.min(riskScore, settings.riskThreshold - 1) : riskScore;
+
+        // Create detection event only if flagged and has actual detections
+        let detectionEvent: DetectionEvent | undefined;
+        if (finalStatus === 'flagged' && matchedPatterns.length > 0 && detectedTypes.length > 0) {
+          const primaryType = detectedTypes[0];
+          const evidence = primaryType.evidence[0] || { snippet: '', reason: '', turn_number: 0, severity: 'medium' as const };
+          
+          detectionEvent = {
+            id: result.id,
+            category: detectedCategory,
+            riskScore: finalRiskScore,
+            timestamp: result.timestamp,
+            snippet: evidence.snippet || testCase.turns[testCase.turns.length - 1]?.content.substring(0, 100) || '',
+            fullCoT: result.recommendations.join(' ') || evidence.reason,
+            conversationHistory: conversation,
+            matchedPatterns: matchedPatterns,
+            confidence: {
+              model: result.confidence === 'high' ? 0.9 : result.confidence === 'medium' ? 0.7 : 0.5,
+              heuristic: primaryType.score
+            }
+          };
+        }
+
+        const newTrace: Trace = {
+          id: `audit-${result.id}`,
+          timestamp: new Date(result.timestamp).toLocaleTimeString(),
+          messageCount: conversation.length,
+          status: finalStatus,
+          riskScore: finalRiskScore,
+          detectionEvent,
+          conversation
+        };
+
+        // Add to traces (avoid duplicates)
+        setTraces(prev => {
+          const exists = prev.find(t => t.id === newTrace.id);
+          if (exists) {
+            return prev.map(t => t.id === newTrace.id ? newTrace : t);
+          }
+          return [newTrace, ...prev];
+        });
+
+        // Show toast notification
+        setToast({ 
+          message: `Audit completed: ${riskScore}% risk score`, 
+          type: status === 'flagged' ? 'alert' : status === 'review' ? 'info' : 'success' 
+        });
+      }} />;
+    }
+
     if (currentView === 'traces') {
       if (selectedTrace) {
         return (
@@ -198,6 +384,7 @@ const App: React.FC = () => {
   const getPageTitle = () => {
     if (currentView === 'dashboard') return 'Live Monitoring Dashboard';
     if (currentView === 'traces') return selectedTrace ? `Investigation: ${selectedTrace.id}` : 'Trace History';
+    if (currentView === 'audit') return 'Safety Audit';
     return 'System Settings';
   };
 
