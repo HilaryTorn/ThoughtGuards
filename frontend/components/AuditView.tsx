@@ -203,7 +203,7 @@ const AuditView: React.FC<AuditViewProps> = ({ onResult, settings, onViewReport 
             return map;
           });
           if (cases.length === 0 && allTestCases.length === 0) {
-            setError('No test cases loaded. Check console for details. Make sure mock_data files are copied to public/mock_data.');
+            setError('NO_CONVERSATIONS');
           }
         }
       } catch (error: any) {
@@ -573,7 +573,7 @@ const AuditView: React.FC<AuditViewProps> = ({ onResult, settings, onViewReport 
         <div>
           <h2 className="text-lg font-semibold text-slate-100 flex items-center gap-2">
             <FileText size={18} className="text-cyan-500" />
-            Audit Test Cases
+            Detection Queue
             {(isLoadingCases || isRefreshingCases) && (
               <Loader2 size={16} className="animate-spin text-cyan-500 ml-2" />
             )}
@@ -758,10 +758,55 @@ const AuditView: React.FC<AuditViewProps> = ({ onResult, settings, onViewReport 
         </select>
       </div>
 
-      {error && (
+      {error && error !== 'NO_CONVERSATIONS' && (
         <div className="bg-red-500/10 border border-red-500/50 rounded-xl p-4 flex items-center gap-3">
           <AlertTriangle size={18} className="text-red-400" />
           <span className="text-sm text-red-400">{error}</span>
+        </div>
+      )}
+
+      {error === 'NO_CONVERSATIONS' && (
+        <div className="bg-slate-900/50 border border-slate-700 rounded-xl p-6">
+          <h3 className="text-lg font-semibold text-slate-200 mb-4">No Conversations Found</h3>
+          <p className="text-sm text-slate-300 mb-2">
+            Import conversation data from JSON files using the CLI. This supports both single files and directories.
+          </p>
+          <p className="text-xs text-amber-400 mb-4">
+            Each conversation must have a unique <code className="bg-slate-950 px-1 rounded">conversation_id</code>. Duplicates will be overwritten.
+          </p>
+
+          <div className="space-y-3">
+            <div>
+              <p className="text-xs text-slate-400 mb-2">Import a single file:</p>
+              <code className="block bg-slate-950 border border-slate-700 rounded px-3 py-2 text-xs text-cyan-300 font-mono">
+                npm run import -- ./path/to/conversation.json
+              </code>
+            </div>
+
+            <div>
+              <p className="text-xs text-slate-400 mb-2">Import an entire directory:</p>
+              <code className="block bg-slate-950 border border-slate-700 rounded px-3 py-2 text-xs text-cyan-300 font-mono">
+                npm run import -- ./mock_data/
+              </code>
+            </div>
+
+            <div>
+              <p className="text-xs text-slate-400 mb-2">Import to production:</p>
+              <code className="block bg-slate-950 border border-slate-700 rounded px-3 py-2 text-xs text-cyan-300 font-mono">
+                npm run import -- ./mock_data/ --api https://your-app.pages.dev
+              </code>
+            </div>
+          </div>
+
+          <div className="mt-4 pt-4 border-t border-slate-700">
+            <p className="text-xs text-slate-500">
+              <strong>JSON Format:</strong> Each file should contain either:
+            </p>
+            <ul className="text-xs text-slate-500 mt-2 space-y-1 list-disc list-inside">
+              <li>A single conversation with <code className="bg-slate-950 px-1 rounded">turns</code> array</li>
+              <li>A dataset with <code className="bg-slate-950 px-1 rounded">conversations</code> array</li>
+            </ul>
+          </div>
         </div>
       )}
 

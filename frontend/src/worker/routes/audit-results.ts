@@ -106,19 +106,52 @@ auditResultsRoutes.get('/', async (c) => {
 
     const result = await db.prepare(query).bind(...params).all();
 
-    // Parse JSON fields
-    const results = (result.results || []).map((row: any) => ({
-      ...row,
-      detected_types: row.detected_types ? JSON.parse(row.detected_types) : [],
+    // Parse JSON fields and convert to camelCase format expected by frontend
+    const traces = (result.results || []).map((row: any) => ({
+      id: row.trace_id,
+      timestamp: row.created_at ? new Date(row.created_at).toLocaleTimeString() : 'N/A',
+      messageCount: row.conversation_data ? JSON.parse(row.conversation_data).length : 0,
+      status: row.status || 'clean',
+      riskScore: row.risk_score || 0,
+      detectionEvent: row.detection_event ? JSON.parse(row.detection_event) : undefined,
+      conversation: row.conversation_data ? JSON.parse(row.conversation_data) : [],
+      // Audit metadata
+      auditId: row.audit_id,
+      conversationId: row.conversation_id,
+      skillId: row.skill_id || '',
+      modelName: row.model_name || '',
+      overallScore: row.overall_score || 0,
+      confidence: row.confidence || 'low',
+      detectedTypes: row.detected_types ? JSON.parse(row.detected_types) : [],
       metrics: row.metrics ? JSON.parse(row.metrics) : {},
       recommendations: row.recommendations ? JSON.parse(row.recommendations) : [],
       limitations: row.limitations ? JSON.parse(row.limitations) : [],
-      secondary_categories: row.secondary_categories ? JSON.parse(row.secondary_categories) : [],
-      conversation_data: row.conversation_data ? JSON.parse(row.conversation_data) : [],
-      detection_event: row.detection_event ? JSON.parse(row.detection_event) : null,
-      skill_results: row.skill_results ? JSON.parse(row.skill_results) : null,
-      detection_metadata: row.detection_metadata ? JSON.parse(row.detection_metadata) : null,
-      usage: row.usage ? JSON.parse(row.usage) : null,
+      usage: row.usage ? JSON.parse(row.usage) : undefined,
+      // Multi-skill fields
+      skillResults: row.skill_results ? JSON.parse(row.skill_results) : undefined,
+      combinedScore: row.combined_score !== null ? row.combined_score : undefined,
+      primaryCategory: row.primary_category || undefined,
+      secondaryCategories: row.secondary_categories ? JSON.parse(row.secondary_categories) : undefined,
+      detectionMetadata: row.detection_metadata ? JSON.parse(row.detection_metadata) : undefined,
+      // Statistical fields
+      runCount: row.run_count || 1,
+      statistics: row.score_mean !== null ? {
+        mean: row.score_mean,
+        stddev: row.score_stddev || 0,
+        quantiles: {
+          p5: row.score_p5 || 0,
+          p50: row.score_p50 || row.overall_score,
+          p95: row.score_p95 || 0
+        },
+        confidenceInterval: row.score_ci_lower !== null ? {
+          lower: row.score_ci_lower,
+          upper: row.score_ci_upper,
+          level: 0.95,
+          method: 'bootstrap'
+        } : undefined
+      } : undefined,
+      createdAt: row.created_at || new Date().toISOString(),
+      updatedAt: row.updated_at || new Date().toISOString(),
     }));
 
     // Get total count
@@ -149,10 +182,8 @@ auditResultsRoutes.get('/', async (c) => {
     const countResult = await db.prepare(countQuery).bind(...countParams).first<{ count: number }>();
 
     return c.json({
-      results,
-      total: countResult?.count || 0,
-      limit,
-      offset
+      traces,
+      total: countResult?.count || traces.length,
     });
   } catch (error: any) {
     console.error('Error fetching audit results:', error);

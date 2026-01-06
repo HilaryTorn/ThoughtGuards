@@ -582,7 +582,7 @@ const App: React.FC = () => {
   const getPageTitle = () => {
     if (currentView === 'dashboard') return 'Live Monitoring Dashboard';
     if (currentView === 'traces') return selectedTrace ? `Investigation: ${selectedTrace.id}` : 'Trace History';
-    if (currentView === 'audit') return 'Safety Audit';
+    if (currentView === 'audit') return 'Detection Queue';
     return 'System Settings';
   };
 

@@ -11,7 +11,7 @@ const LeftNav: React.FC<LeftNavProps> = ({ currentView, onNavigate }) => {
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'traces', label: 'Traces', icon: List },
-    { id: 'audit', label: 'Processing', icon: FileText },
+    { id: 'audit', label: 'Queue', icon: FileText },
     { id: 'settings', label: 'Settings', icon: Settings },
   ] as const;
 
@@ -22,7 +22,7 @@ const LeftNav: React.FC<LeftNavProps> = ({ currentView, onNavigate }) => {
         <div className="bg-gradient-to-tr from-cyan-500 to-blue-600 p-1.5 rounded-lg shadow-[0_0_15px_rgba(6,182,212,0.3)]">
           <Shield className="text-white w-5 h-5" />
         </div>
-        <span className="font-bold text-slate-100 tracking-tight">CoT Monitor</span>
+        <span className="font-bold text-slate-100 tracking-tight">Thought Guards</span>
       </div>
 
       {/* Navigation */}

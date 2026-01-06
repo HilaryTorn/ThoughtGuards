@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Settings as SettingsIcon, Sliders, AlertCircle, ToggleLeft, ToggleRight, Eye, EyeOff, RefreshCw, Database, Loader2 } from 'lucide-react';
+import { Settings as SettingsIcon, Sliders, AlertCircle, ToggleLeft, ToggleRight, Eye, EyeOff, Database, Loader2 } from 'lucide-react';
 import { AppSettings, DetectionCategory } from '../types';
 import { CATEGORY_STYLES } from '../constants';
 import { AVAILABLE_SKILLS, CATEGORY_TO_SKILL } from '../lib/skillsRegistry';
@@ -17,29 +17,6 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
     message?: string;
   }>>({});
   const [availableGeminiModels, setAvailableGeminiModels] = useState<Array<{ name: string; displayName: string }>>([]);
-  const [syncStatus, setSyncStatus] = useState<{ 
-    loading: boolean; 
-    message?: string; 
-    error?: string; 
-    stats?: any; 
-    isLocked?: boolean; 
-    startedAt?: string;
-    duration?: number;
-    progress?: { filesProcessed: number; totalFiles: number; conversationsProcessed: number };
-    successfulFiles?: string[];
-    failedFiles?: Array<{ path: string; reason: string }>;
-    detailedErrors?: Array<{
-      message: string;
-      sqlPreview?: string;
-      sqlLength?: number;
-      reference?: string;
-      statementNumber?: number;
-    }>;
-    showDetails?: boolean;
-    completed?: boolean;
-    cancelled?: boolean;
-  }>({ loading: false });
-  
   const [activeSection, setActiveSection] = useState<string>('detection-models');
   const sectionRefs = useRef<Record<string, HTMLElement | null>>({});
 
@@ -220,154 +197,6 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
-  // Poll for sync status
-  useEffect(() => {
-    const checkSyncStatus = async () => {
-      try {
-        const response = await fetch('/api/sync-conversations');
-        if (response.ok) {
-          const data = await response.json();
-          // Debug logging to verify errors are being received
-          if (data.detailedErrors && data.detailedErrors.length > 0) {
-            console.log('[Sync UI] Received detailed errors:', data.detailedErrors.length);
-            console.log('[Sync UI] First error:', data.detailedErrors[0].message?.substring(0, 100));
-          } else {
-            console.log('[Sync UI] No detailed errors in response (isLocked:', data.isLocked, ', completed:', data.completed, ')');
-          }
-          if (data.isLocked) {
-            const duration = data.duration || 0;
-            const minutes = Math.floor(duration / 60);
-            const seconds = duration % 60;
-            const durationText = minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
-            
-            let message = `Sync in progress (${durationText})...`;
-            if (data.progress && data.progress.totalFiles > 0) {
-              const percent = Math.round((data.progress.filesProcessed / data.progress.totalFiles) * 100);
-              const successful = data.progress.successfulFiles?.length || 0;
-              const failed = data.progress.failedFiles?.length || 0;
-              const sqlErrorCount = data.detailedErrors?.length || data.progress?.sqlErrorCount || 0;
-              
-              if (data.progress.currentPhase === 'sql-execution' && data.progress.sqlStatementsTotal) {
-                const sqlPercent = Math.round((data.progress.sqlStatementsExecuted || 0) / data.progress.sqlStatementsTotal * 100);
-                message = `Executing SQL... ${data.progress.sqlStatementsExecuted || 0}/${data.progress.sqlStatementsTotal} statements (${sqlPercent}%)`;
-                if (sqlErrorCount > 0) {
-                  message += ` - ✗ ${sqlErrorCount} SQL errors`;
-                }
-              } else {
-                message = `Syncing... ${data.progress.filesProcessed}/${data.progress.totalFiles} files (${percent}%) - ${data.progress.conversationsProcessed} conversations`;
-                // Always show passed/failed counts if available, including SQL errors
-                if (successful > 0 || failed > 0 || sqlErrorCount > 0) {
-                  message += ` - ✓ ${successful} passed`;
-                  if (failed > 0 || sqlErrorCount > 0) {
-                    message += `, ✗ ${failed} failed`;
-                    if (sqlErrorCount > 0) {
-                      message += ` (${sqlErrorCount} SQL errors)`;
-                    }
-                  }
-                }
-              }
-            }
-            
-            setSyncStatus(prev => ({
-              ...prev,
-              loading: true,
-              isLocked: true,
-              startedAt: data.startedAt,
-              duration: duration,
-              progress: data.progress,
-              message: message,
-              // Include detailed errors if available (for real-time display during sync)
-              detailedErrors: data.detailedErrors || prev.detailedErrors || []
-            }));
-          } else if (data.completed) {
-            // Sync completed (check completed flag first)
-            const hasErrors = (data.errors && data.errors.length > 0) || (data.detailedErrors && data.detailedErrors.length > 0);
-            const message = data.cancelled 
-              ? `Sync cancelled. Processed ${data.stats?.conversationsProcessed || 0} conversations from ${data.stats?.successfulFiles || 0} files before cancellation. ${data.stats?.failedFiles || 0} files failed.`
-              : hasErrors
-              ? `Sync completed with ${data.errors?.length || data.detailedErrors?.length || 0} errors. Processed ${data.stats?.conversationsProcessed || 0} conversations from ${data.stats?.successfulFiles || 0} files. ${data.stats?.failedFiles || 0} files failed.`
-              : `Sync completed! Processed ${data.stats?.conversationsProcessed || 0} conversations from ${data.stats?.successfulFiles || 0} files. ${data.stats?.failedFiles || 0} files failed.`;
-            
-            console.log('[Sync UI] Detected completion:', { completed: data.completed, hasErrors, errors: data.errors?.length, detailedErrors: data.detailedErrors?.length });
-            
-            setSyncStatus({
-              loading: false,
-              isLocked: false,
-              completed: true,
-              cancelled: data.cancelled || false,
-              message: message,
-              stats: data.stats,
-              successfulFiles: data.successfulFiles || [],
-              failedFiles: data.failedFiles || [],
-              detailedErrors: data.detailedErrors || [],
-              showDetails: (data.failedFiles && data.failedFiles.length > 0) || hasErrors || false,
-              duration: data.duration
-            });
-            // Stop polling - sync is complete
-            // Only refresh if not cancelled and no errors
-            if (!data.cancelled && !hasErrors) {
-              setTimeout(() => {
-                window.location.reload();
-              }, 3000);
-            }
-          } else if (!data.isLocked && data.stats && !data.isLocked) {
-            // Lock was released and we have stats - sync completed
-            const hasErrors = (data.errors && data.errors.length > 0) || (data.detailedErrors && data.detailedErrors.length > 0);
-            const message = hasErrors
-              ? `Sync completed with ${data.errors?.length || data.detailedErrors?.length || 0} errors. Processed ${data.stats?.conversationsProcessed || 0} conversations from ${data.stats?.successfulFiles || 0} files. ${data.stats?.failedFiles || 0} files failed.`
-              : `Sync completed! Processed ${data.stats?.conversationsProcessed || 0} conversations from ${data.stats?.successfulFiles || 0} files. ${data.stats?.failedFiles || 0} files failed.`;
-            
-            console.log('[Sync UI] Detected completion via stats:', { hasStats: !!data.stats, hasErrors });
-            
-            setSyncStatus({
-              loading: false,
-              isLocked: false,
-              completed: true,
-              message: message,
-              stats: data.stats,
-              successfulFiles: data.successfulFiles || [],
-              failedFiles: data.failedFiles || [],
-              detailedErrors: data.detailedErrors || [],
-              showDetails: (data.failedFiles && data.failedFiles.length > 0) || hasErrors || false,
-              duration: data.duration
-            });
-            // Only refresh if no errors
-            if (!hasErrors) {
-              setTimeout(() => {
-                window.location.reload();
-              }, 3000);
-            }
-          } else if (data.error) {
-            // Sync failed
-            setSyncStatus({
-              loading: false,
-              isLocked: false,
-              error: data.error
-            });
-          } else if (syncStatus.loading && !syncStatus.stats) {
-            // Sync was running but now completed (we'll get the result from the POST response)
-            setSyncStatus(prev => ({ ...prev, isLocked: false }));
-          }
-        }
-      } catch (error) {
-        // Ignore errors when checking status
-      }
-    };
-
-    // Check immediately
-    checkSyncStatus();
-
-    // Poll every 1 second if sync is in progress for better progress updates
-    const interval = setInterval(() => {
-      // Continue polling if loading, locked, or if we're waiting for completion data
-      if (syncStatus.loading || syncStatus.isLocked || (!syncStatus.completed && syncStatus.loading)) {
-        checkSyncStatus();
-      }
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [syncStatus.loading, syncStatus.isLocked, syncStatus.completed]);
-
   const updateApiKey = (key: string, value: string) => {
     if (typeof window === 'undefined') return;
     
@@ -430,104 +259,11 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
     });
   };
 
-  const handleCancelSync = async () => {
-    try {
-      const response = await fetch('/api/sync-conversations', {
-        method: 'DELETE'
-      });
-      const data = await response.json();
-      if (data.success) {
-        setSyncStatus(prev => ({
-          ...prev,
-          message: 'Cancellation requested...',
-          isLocked: true // Keep locked until it actually stops
-        }));
-      }
-    } catch (error: any) {
-      console.error('Failed to cancel sync:', error);
-    }
-  };
-
-  const handleSyncConversations = async () => {
-    // Check if sync is already in progress
-    if (syncStatus.isLocked || syncStatus.loading) {
-      return;
-    }
-
-    setSyncStatus({ loading: true, isLocked: false, message: 'Starting sync...', duration: 0 });
-    try {
-      const response = await fetch('/api/sync-conversations', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ deleteMissing: false })
-      });
-
-      // Check if response is JSON before parsing
-      let data: any;
-      const contentType = response.headers.get('content-type');
-      if (contentType && contentType.includes('application/json')) {
-        try {
-          data = await response.json();
-        } catch (jsonError: any) {
-          const text = await response.text();
-          setSyncStatus({
-            loading: false,
-            isLocked: false,
-            error: `Invalid JSON response: ${text.substring(0, 200)}`
-          });
-          return;
-        }
-      } else {
-        const text = await response.text();
-        setSyncStatus({
-          loading: false,
-          isLocked: false,
-          error: `Unexpected response: ${text.substring(0, 200)}`
-        });
-        return;
-      }
-      
-      if (response.status === 409) {
-        // Conflict - sync already in progress
-        setSyncStatus({
-          loading: true,
-          isLocked: true,
-          message: data.message || 'Sync already in progress',
-          startedAt: data.startedAt
-        });
-        return;
-      }
-      
-      if (data.success) {
-        // Sync started - polling will handle completion
-        setSyncStatus({
-          loading: true,
-          isLocked: true,
-          message: data.message || 'Sync started',
-          startedAt: data.startedAt
-        });
-      } else {
-        setSyncStatus({
-          loading: false,
-          isLocked: false,
-          error: data.message || data.error || 'Sync failed'
-        });
-      }
-    } catch (error: any) {
-      setSyncStatus({
-        loading: false,
-        isLocked: false,
-        error: error.message || 'Failed to sync conversations'
-      });
-    }
-  };
-
   const sections = [
     { id: 'detection-models', label: 'Active Detection Models', icon: Sliders },
     { id: 'auditor-config', label: 'Auditor Configuration', icon: Sliders },
     { id: 'sensitivity-threshold', label: 'Sensitivity & Threshold', icon: AlertCircle },
     { id: 'api-keys', label: 'API Key Configuration', icon: Sliders },
-    { id: 'chatbot-config', label: 'Chatbot Configuration', icon: Sliders },
     { id: 'database-management', label: 'Database Management', icon: Database },
   ];
 
@@ -913,7 +649,7 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
                 <div className="flex-1">
                   <p className="text-sm font-medium text-amber-300 mb-1">API Keys Required</p>
                   <p className="text-xs text-amber-200/80">
-                    API keys are stored in your browser's localStorage. For production deployment, set environment variables via <code className="bg-slate-900/50 px-1 rounded">wrangler secret put</code> or Cloudflare dashboard.
+                    API keys are stored in your browser's localStorage. For production deployment, set environment variables in Cloudflare.
                   </p>
                 </div>
               </div>
@@ -1059,44 +795,14 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
                 <strong>Note:</strong> For server-side chat API, set environment variables in Cloudflare:
               </p>
               <code className="block bg-slate-950 border border-slate-700 rounded px-3 py-2 text-xs text-slate-300 font-mono">
-                wrangler secret put GEMINI_API_KEY
+                GEMINI_API_KEY
               </code>
             </div>
           </div>
         </div>
 
-        {/* Chatbot Configuration */}
-        <div 
-          id="chatbot-config"
-          ref={(el) => (sectionRefs.current['chatbot-config'] = el)}
-          className="glass-panel p-6 rounded-xl border-slate-800 scroll-mt-24"
-        >
-          <h3 className="text-lg font-semibold text-slate-200 mb-6 flex items-center gap-2">
-            <Sliders size={20} className="text-cyan-500" />
-            Chatbot Configuration
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">
-                Default Chatbot Mode
-              </label>
-              <select
-                value={settings.chatbotMode || 'helpful'}
-                onChange={(e) => onUpdate({ ...settings, chatbotMode: e.target.value })}
-                className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
-              >
-                <option value="helpful">Helpful & Honest</option>
-                <option value="conversion_optimized">Conversion Optimized</option>
-                <option value="retention_focused">Retention Focused</option>
-                <option value="metric_gamer">Metric Gamer</option>
-              </select>
-              <p className="text-xs text-slate-500 mt-1">Default mode for customer chat</p>
-            </div>
-          </div>
-        </div>
-
         {/* Database Management */}
-        <div 
+        <div
           id="database-management"
           data-testid="database-management-section"
           data-automation="database-management-section"
@@ -1105,221 +811,49 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
         >
           <h3 className="text-lg font-semibold text-slate-200 mb-6 flex items-center gap-2">
             <Database size={20} className="text-cyan-500" />
-            Database Management
+            Import Conversations
           </h3>
           <div className="space-y-4">
             <div className="bg-slate-900/50 border border-slate-700 rounded-lg p-4">
-              <p className="text-sm text-slate-300 mb-4">
-                Sync conversations from <code className="bg-slate-950 px-2 py-1 rounded text-xs">mock_data</code> folder to the database.
-                This will update existing conversations and add new ones.
+              <p className="text-sm text-slate-300 mb-2">
+                Import conversation data from JSON files using the CLI. This supports both single files and directories.
               </p>
-              
-              <div className="flex items-center gap-2">
-                <button
-                  data-testid="sync-conversations-button"
-                  data-automation="sync-conversations"
-                  onClick={handleSyncConversations}
-                  disabled={(syncStatus.loading || syncStatus.isLocked) && !syncStatus.completed}
-                  className="flex items-center gap-2 px-4 py-2 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-400 border border-cyan-500/50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  aria-label="Sync conversations from mock_data folder to database"
-                >
-                  {(syncStatus.loading || syncStatus.isLocked) ? (
-                    <>
-                      <Loader2 size={18} className="animate-spin" />
-                      <span>Syncing...</span>
-                    </>
-                  ) : (
-                    <>
-                      <RefreshCw size={18} />
-                      <span>Sync Conversations</span>
-                    </>
-                  )}
-                </button>
+              <p className="text-xs text-amber-400 mb-4">
+                Each conversation must have a unique <code className="bg-slate-950 px-1 rounded">conversation_id</code>. Duplicates will be overwritten.
+              </p>
 
-                {(syncStatus.loading || syncStatus.isLocked) && (
-                  <button
-                    data-testid="cancel-sync-button"
-                    data-automation="cancel-sync"
-                    onClick={handleCancelSync}
-                    className="px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/50 rounded-lg transition-colors text-sm"
-                    aria-label="Cancel sync operation"
-                  >
-                    Cancel
-                  </button>
-                )}
+              <div className="space-y-3">
+                <div>
+                  <p className="text-xs text-slate-400 mb-2">Import a single file:</p>
+                  <code className="block bg-slate-950 border border-slate-700 rounded px-3 py-2 text-xs text-cyan-300 font-mono">
+                    npm run import -- ./path/to/conversation.json
+                  </code>
+                </div>
+
+                <div>
+                  <p className="text-xs text-slate-400 mb-2">Import an entire directory:</p>
+                  <code className="block bg-slate-950 border border-slate-700 rounded px-3 py-2 text-xs text-cyan-300 font-mono">
+                    npm run import -- ./mock_data/
+                  </code>
+                </div>
+
+                <div>
+                  <p className="text-xs text-slate-400 mb-2">Import to production:</p>
+                  <code className="block bg-slate-950 border border-slate-700 rounded px-3 py-2 text-xs text-cyan-300 font-mono">
+                    npm run import -- ./mock_data/ --api https://your-app.pages.dev
+                  </code>
+                </div>
               </div>
 
-              {syncStatus.isLocked && syncStatus.startedAt && (
-                <div className="mt-2 space-y-1">
-                  <p className="text-xs text-slate-400">
-                    Started: {new Date(syncStatus.startedAt).toLocaleString()}
-                  </p>
-                  {syncStatus.duration !== undefined && (
-                    <p className="text-xs text-slate-400">
-                      Duration: {Math.floor((syncStatus.duration || 0) / 60)}m {(syncStatus.duration || 0) % 60}s
-                    </p>
-                  )}
-                  {syncStatus.progress && syncStatus.progress.totalFiles > 0 && (
-                    <div className="mt-2">
-                      <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
-                        <div 
-                          className="bg-cyan-500 h-2 transition-all duration-300"
-                          style={{ width: `${(syncStatus.progress.filesProcessed / syncStatus.progress.totalFiles) * 100}%` }}
-                        />
-                      </div>
-                      <div className="flex items-center justify-between mt-1">
-                        <p className="text-xs text-slate-400">
-                          {syncStatus.progress.filesProcessed} / {syncStatus.progress.totalFiles} files
-                        </p>
-                        <div className="flex items-center gap-3 text-xs">
-                          {syncStatus.progress.successfulFiles && syncStatus.progress.successfulFiles.length > 0 && (
-                            <span className="text-green-400">✓ {syncStatus.progress.successfulFiles.length} passed</span>
-                          )}
-                          {/* Show failed files if any */}
-                          {syncStatus.progress.failedFiles && syncStatus.progress.failedFiles.length > 0 && (
-                            <span className="text-red-400">
-                              ✗ {syncStatus.progress.failedFiles.length} failed files
-                            </span>
-                          )}
-                          {/* Show SQL errors separately (these are different from failed files) */}
-                          {syncStatus.stats?.filesWithSqlErrors && syncStatus.stats.filesWithSqlErrors > 0 && (
-                            <span className="text-amber-400">⚠ {syncStatus.stats.filesWithSqlErrors} files had SQL errors</span>
-                          )}
-                        </div>
-                      </div>
-                      {syncStatus.progress.currentPhase === 'sql-execution' && syncStatus.progress.sqlStatementsTotal && (
-                        <div className="mt-2">
-                          <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
-                            <div 
-                              className="bg-purple-500 h-2 transition-all duration-300"
-                              style={{ width: `${((syncStatus.progress.sqlStatementsExecuted || 0) / syncStatus.progress.sqlStatementsTotal) * 100}%` }}
-                            />
-                          </div>
-                          <p className="text-xs text-slate-400 mt-1">
-                            SQL: {syncStatus.progress.sqlStatementsExecuted || 0} / {syncStatus.progress.sqlStatementsTotal} statements
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {syncStatus.message && (
-                <div className="mt-4 p-3 bg-cyan-500/10 border border-cyan-500/30 rounded-lg">
-                  <p className="text-sm text-cyan-300">{syncStatus.message}</p>
-                  {syncStatus.stats && (
-                    <div className="mt-2 text-xs text-cyan-400/80 space-y-1">
-                      <p>Files processed: {syncStatus.stats.filesProcessed}</p>
-                      <p>Successful files: {syncStatus.stats.successfulFiles || 0}</p>
-                      {(syncStatus.stats.failedFiles > 0 || (syncStatus.stats.filesWithSqlErrors && syncStatus.stats.filesWithSqlErrors > 0)) && (
-                        <p className="text-amber-400">
-                          Failed files: {syncStatus.stats.failedFiles || 0}
-                          {syncStatus.stats.filesWithSqlErrors && syncStatus.stats.filesWithSqlErrors > 0 && ` (${syncStatus.stats.filesWithSqlErrors} files had SQL errors)`}
-                        </p>
-                      )}
-                      <p>Conversations processed: {syncStatus.stats.conversationsProcessed}</p>
-                      <p>SQL statements executed: {syncStatus.stats.sqlStatementsExecuted}</p>
-                      {(syncStatus.stats.errors > 0 || (syncStatus.detailedErrors && syncStatus.detailedErrors.length > 0)) && (
-                        <p className="text-amber-400">
-                          Total errors: {syncStatus.stats.errors || syncStatus.detailedErrors?.length || 0}
-                          {syncStatus.stats.sqlErrors > 0 && ` (${syncStatus.stats.sqlErrors} SQL, ${syncStatus.stats.errors - (syncStatus.stats.sqlErrors || 0)} parsing)`}
-                        </p>
-                      )}
-                    </div>
-                  )}
-                  
-                  {/* Show/Hide Details Button */}
-                  {(syncStatus.failedFiles && syncStatus.failedFiles.length > 0) || (syncStatus.detailedErrors && syncStatus.detailedErrors.length > 0) ? (
-                    <button
-                      data-testid="sync-show-details-button"
-                      data-automation="sync-show-details"
-                      onClick={() => setSyncStatus(prev => ({ ...prev, showDetails: !prev.showDetails }))}
-                      className="mt-3 text-xs text-cyan-400 hover:text-cyan-300 underline"
-                      aria-label={syncStatus.showDetails ? 'Hide sync details' : 'Show sync details'}
-                    >
-                      {syncStatus.showDetails ? 'Hide' : 'Show'} details (
-                      {syncStatus.failedFiles?.length || 0} failed files
-                      {syncStatus.stats?.filesWithSqlErrors && syncStatus.stats.filesWithSqlErrors > 0 && `, ${syncStatus.stats.filesWithSqlErrors} files had SQL errors`}
-                      )
-                    </button>
-                  ) : null}
-                  
-                  {/* Failed Files List */}
-                  {syncStatus.showDetails && syncStatus.failedFiles && syncStatus.failedFiles.length > 0 && (
-                    <div className="mt-3 p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
-                      <p className="text-xs font-semibold text-red-300 mb-2">Failed Files:</p>
-                      <div className="space-y-1 max-h-48 overflow-y-auto">
-                        {syncStatus.failedFiles.map((file, idx) => (
-                          <div key={idx} className="text-xs text-red-400/80">
-                            <p className="font-mono">{file.path}</p>
-                            <p className="text-red-500/60 ml-2">→ {file.reason}</p>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  
-                  {/* SQL Errors List */}
-                  {syncStatus.showDetails && syncStatus.detailedErrors && syncStatus.detailedErrors.length > 0 && (
-                    <div className="mt-3 p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg">
-                      <p className="text-xs font-semibold text-amber-300 mb-2">SQL Errors ({syncStatus.detailedErrors.length}):</p>
-                      <div className="space-y-3 max-h-96 overflow-y-auto">
-                        {syncStatus.detailedErrors.map((err, idx) => (
-                          <div key={idx} className="text-xs bg-slate-900/50 p-2 rounded border border-amber-500/20">
-                            <p className="text-amber-400 font-semibold mb-1">
-                              Error #{err.statementNumber || idx + 1}: {err.message}
-                            </p>
-                            {err.reference && (
-                              <p className="text-amber-300/70 mb-1">
-                                Reference: <code className="bg-slate-950 px-1 rounded">{err.reference}</code>
-                              </p>
-                            )}
-                            {err.sqlLength && (
-                              <p className="text-amber-300/70 mb-1">
-                                SQL Length: {err.sqlLength.toLocaleString()} chars
-                              </p>
-                            )}
-                            {err.sqlPreview && (
-                              <details className="mt-1">
-                                <summary className="text-amber-300/80 cursor-pointer hover:text-amber-300">
-                                  Show SQL Preview
-                                </summary>
-                                <pre className="mt-1 p-2 bg-slate-950 rounded text-amber-200/80 text-[10px] overflow-x-auto max-w-full">
-                                  {err.sqlPreview}
-                                </pre>
-                              </details>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  
-                  {/* Successful Files Summary (optional, can be expanded) */}
-                  {syncStatus.successfulFiles && syncStatus.successfulFiles.length > 0 && syncStatus.showDetails && (
-                    <div className="mt-3 p-3 bg-green-500/10 border border-green-500/30 rounded-lg">
-                      <p className="text-xs font-semibold text-green-300 mb-2">
-                        Successful Files: {syncStatus.successfulFiles.length}
-                      </p>
-                      <div className="space-y-1 max-h-32 overflow-y-auto">
-                        {syncStatus.successfulFiles.slice(0, 10).map((file, idx) => (
-                          <p key={idx} className="text-xs text-green-400/80 font-mono">{file}</p>
-                        ))}
-                        {syncStatus.successfulFiles.length > 10 && (
-                          <p className="text-xs text-green-400/60">... and {syncStatus.successfulFiles.length - 10} more</p>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {syncStatus.error && (
-                <div className="mt-4 p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
-                  <p className="text-sm text-red-300">{syncStatus.error}</p>
-                </div>
-              )}
+              <div className="mt-4 pt-4 border-t border-slate-700">
+                <p className="text-xs text-slate-500">
+                  <strong>JSON Format:</strong> Each file should contain either:
+                </p>
+                <ul className="text-xs text-slate-500 mt-2 space-y-1 list-disc list-inside">
+                  <li>A single conversation with <code className="bg-slate-950 px-1 rounded">turns</code> array</li>
+                  <li>A dataset with <code className="bg-slate-950 px-1 rounded">conversations</code> array</li>
+                </ul>
+              </div>
             </div>
           </div>
         </div>
