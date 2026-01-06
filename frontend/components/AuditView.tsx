@@ -15,7 +15,6 @@ import { executeReport } from '../lib/reportExecutor';
 interface AuditViewProps {
   onResult?: (result: AuditResult, testCase: EnrichedTestCase) => void;
   settings: AppSettings;
-  onViewReport?: (trace: any) => void;
 }
 
 type TestCaseStatus = 'pending' | 'running' | 'completed' | 'failed';
@@ -28,7 +27,7 @@ interface TestCaseWithStatus extends EnrichedTestCase {
 
 const ITEMS_PER_PAGE = 20;
 
-const AuditView: React.FC<AuditViewProps> = ({ onResult, settings, onViewReport }) => {
+const AuditView: React.FC<AuditViewProps> = ({ onResult, settings }) => {
   if (!settings) {
     return <div className="text-slate-400">Settings not available</div>;
   }
@@ -621,41 +620,6 @@ const AuditView: React.FC<AuditViewProps> = ({ onResult, settings, onViewReport 
             </>
           )}
           <button
-            onClick={() => {
-              setShowCreateReportModal(true);
-              setSelectedConversationForReport(null);
-            }}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-purple-500/20 text-purple-400 border border-purple-500/50 hover:bg-purple-500/30"
-            title="Create a new audit report with custom parameters"
-          >
-            <Plus size={16} />
-            Create Report
-          </button>
-          <button
-            onClick={() => {
-              setShowParameterSweepModal(true);
-              setSelectedConversationForReport(null);
-            }}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-amber-500/20 text-amber-400 border border-amber-500/50 hover:bg-amber-500/30"
-            title="Run parameter sweep analysis"
-          >
-            <BarChart3 size={16} />
-            Parameter Sweep
-          </button>
-          <button
-            onClick={() => setShowReportsListModal(true)}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-cyan-500/20 text-cyan-400 border border-cyan-500/50 hover:bg-cyan-500/30"
-            title="View all reports"
-          >
-            <List size={16} />
-            View Reports
-            {reportCounts.size > 0 && (
-              <span className="px-1.5 py-0.5 bg-cyan-500/30 rounded text-xs">
-                {Array.from(reportCounts.values()).reduce((sum, count) => sum + count, 0)}
-              </span>
-            )}
-          </button>
-          <button
             onClick={toggleAutoRun}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
               autoRunEnabled
@@ -898,16 +862,6 @@ const AuditView: React.FC<AuditViewProps> = ({ onResult, settings, onViewReport 
                   <div className="flex items-center gap-2 flex-shrink-0">
                     <button
                       onClick={() => {
-                        setSelectedConversationForReport(testCase);
-                        setShowCreateReportModal(true);
-                      }}
-                      className="p-2 hover:bg-purple-500/20 rounded-lg text-purple-400 hover:text-purple-300 transition-colors"
-                      title="Create Report"
-                    >
-                      <Plus size={16} />
-                    </button>
-                    <button
-                      onClick={() => {
                         setSelectedTestCase(testCase);
                         setShowDetailModal(true);
                       }}
@@ -916,61 +870,6 @@ const AuditView: React.FC<AuditViewProps> = ({ onResult, settings, onViewReport 
                     >
                       <Eye size={16} />
                     </button>
-                    {hasResult && onViewReport && (
-                      <button
-                        onClick={() => {
-                          // Convert test case with result to Trace format for report view
-                          const riskScore = Math.round(testCase.result!.overall_score * 100);
-                          const trace = {
-                            id: `audit-${testCase.result!.id}`,
-                            timestamp: new Date(testCase.result!.timestamp).toLocaleTimeString(),
-                            messageCount: testCase.turns.length,
-                            status: (riskScore >= 70 ? 'flagged' : riskScore >= 40 ? 'review' : 'clean') as const,
-                            riskScore: riskScore,
-                            conversation: testCase.turns.map((t, idx) => {
-                              const msg: any = {
-                                role: t.role as 'user' | 'assistant',
-                                content: t.content,
-                                timestamp: t.timestamp
-                              };
-                              // Include reasoning_trace if available (from turn or conversation level)
-                              if (t.role === 'assistant') {
-                                if ((t as any).reasoning_trace) {
-                                  msg.reasoning_trace = (t as any).reasoning_trace;
-                                } else if (idx === testCase.turns.length - 1 && testCase.reasoning_trace) {
-                                  msg.reasoning_trace = testCase.reasoning_trace;
-                                }
-                              }
-                              return msg;
-                            }),
-                            auditId: testCase.result!.id,
-                            conversationId: testCase.conversation_id,
-                            skillId: testCase.result!.skill_id,
-                            modelName: testCase.result!.model_name,
-                            overallScore: testCase.result!.overall_score,
-                            confidence: testCase.result!.confidence,
-                            detectedTypes: testCase.result!.detected_types,
-                            metrics: testCase.result!.metrics,
-                            recommendations: testCase.result!.recommendations,
-                            limitations: testCase.result!.limitations,
-                            usage: testCase.result!.usage,
-                            // Multi-skill fields
-                            skillResults: (testCase.result as any).skill_results,
-                            combinedScore: (testCase.result as any).combined_score,
-                            primaryCategory: (testCase.result as any).primary_category,
-                            secondaryCategories: (testCase.result as any).secondary_categories,
-                            detectionMetadata: (testCase.result as any).detection_metadata,
-                          };
-                          console.log('Opening report for trace:', trace);
-                          onViewReport(trace);
-                        }}
-                        className="px-3 py-1.5 text-xs bg-cyan-600/20 hover:bg-cyan-600/30 text-cyan-400 border border-cyan-600/50 rounded-lg transition-colors flex items-center gap-1.5"
-                        title="View full audit report"
-                      >
-                        <FileText size={14} />
-                        Report
-                      </button>
-                    )}
                     <button
                       onClick={() => handleRunAudit(testCase)}
                       disabled={isRunning}
@@ -1251,31 +1150,6 @@ const AuditView: React.FC<AuditViewProps> = ({ onResult, settings, onViewReport 
             <div className="flex-1 overflow-y-auto">
               <ReportListView
                 conversationId={selectedConversationForReport?.conversation_id}
-                onViewReport={(report) => {
-                  // Convert AuditReport to Trace format and call onViewReport
-                  if (onViewReport) {
-                    const trace = {
-                      id: report.report_id,
-                      timestamp: new Date(report.created_at).toLocaleTimeString(),
-                      messageCount: report.conversation_snapshot?.turns?.length || 0,
-                      status: (report.overall_score >= 0.7 ? 'flagged' : report.overall_score >= 0.4 ? 'review' : 'clean') as const,
-                      riskScore: Math.round(report.overall_score * 100),
-                      conversation: report.conversation_snapshot?.turns || [],
-                      reportId: report.report_id,
-                      conversationId: report.conversation_id,
-                      skillId: report.skill_id,
-                      modelName: report.model_name,
-                      overallScore: report.overall_score,
-                      confidence: report.confidence,
-                      detectedTypes: report.detected_types,
-                      metrics: report.metrics,
-                      recommendations: report.recommendations,
-                      limitations: report.limitations,
-                      usage: report.usage
-                    };
-                    onViewReport(trace);
-                  }
-                }}
                 onDeleteReports={async (reportIds) => {
                   for (const reportId of reportIds) {
                     await fetch(`/api/audit-reports/${reportId}`, { method: 'DELETE' });

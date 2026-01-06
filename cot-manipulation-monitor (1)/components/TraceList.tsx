@@ -21,7 +21,6 @@ const TraceList: React.FC<TraceListProps> = ({ traces, onSelectTrace }) => {
                 <th className="p-4 font-semibold">Messages</th>
                 <th className="p-4 font-semibold">Status</th>
                 <th className="p-4 font-semibold text-right">Risk Score</th>
-                <th className="p-4 font-semibold">Statistics</th>
                 <th className="p-4 font-semibold"></th>
               </tr>
             </thead>
@@ -117,44 +116,8 @@ const TraceList: React.FC<TraceListProps> = ({ traces, onSelectTrace }) => {
                         </span>
                       </div>
                     </td>
-                    <td className="p-4">
-                      {(() => {
-                        const statistics = (trace as any).statistics;
-                        const runCount = (trace as any).runCount || 1;
-                        const isMultiRun = runCount > 1;
-                        
-                        if (!isMultiRun || !statistics) {
-                          return <span className="text-xs text-slate-500">Single run</span>;
-                        }
-                        
-                        const variance = statistics.stddev || 0;
-                        const varianceLevel = variance < 0.05 ? 'low' : variance < 0.15 ? 'medium' : 'high';
-                        const varianceColor = varianceLevel === 'low' ? 'text-green-400' : varianceLevel === 'medium' ? 'text-amber-400' : 'text-red-400';
-                        
-                        return (
-                          <div className="text-xs space-y-1">
-                            <div className="font-mono text-slate-300">
-                              {(statistics.mean * 100).toFixed(1)}% ± {(statistics.stddev * 100).toFixed(1)}%
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <span className={`px-1.5 py-0.5 rounded text-[10px] ${varianceColor} bg-slate-800`}>
-                                {varianceLevel} variance
-                              </span>
-                              <span className="text-slate-500">{runCount} runs</span>
-                            </div>
-                            {statistics.confidenceInterval && (
-                              <div className="text-[10px] text-slate-500 font-mono">
-                                CI: [{(statistics.confidenceInterval.lower * 100).toFixed(1)}%, {(statistics.confidenceInterval.upper * 100).toFixed(1)}%]
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })()}
-                    </td>
-                    <td className="p-4">
-                      <div className="flex items-center justify-end gap-2">
-                        <ArrowRight size={16} className="text-slate-600 opacity-0 group-hover:opacity-100 transition-opacity" />
-                      </div>
+                    <td className="p-4 text-center">
+                      <ArrowRight size={16} className="text-slate-600 opacity-0 group-hover:opacity-100 transition-opacity" />
                     </td>
                   </tr>
                 );

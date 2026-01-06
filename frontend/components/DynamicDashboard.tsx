@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Activity, TrendingUp, AlertTriangle, BarChart3, Loader2 } from 'lucide-react';
+import { Activity, AlertTriangle, BarChart3, Loader2 } from 'lucide-react';
 import { DetectionCategory, DetectionEvent, Message } from '../types';
 import { CATEGORY_STYLES } from '../constants';
-import SystemMetrics from './SystemMetrics';
 import DetectionCard from './DetectionCard';
 
 interface DashboardStats {
@@ -177,9 +176,6 @@ const DynamicDashboard: React.FC<DynamicDashboardProps> = ({ settings, onViewTra
 
   return (
     <div className="space-y-8">
-      {/* System Metrics - Overview at the top */}
-      <SystemMetrics stats={stats} />
-
       {/* Summary Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="glass-panel p-6 rounded-xl border-l-4 border-cyan-500/50 flex items-center justify-between">
@@ -213,36 +209,6 @@ const DynamicDashboard: React.FC<DynamicDashboardProps> = ({ settings, onViewTra
         </div>
       </div>
 
-      {/* Category Breakdown */}
-      <div>
-        <h2 className="text-2xl font-bold text-slate-100 mb-6">Detections by Category</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {Object.entries(stats.byCategory)
-            .filter(([cat, data]) => (data as any).count > 0 && cat in CATEGORY_STYLES)
-            .map(([cat, data]) => {
-              const categoryStyle = CATEGORY_STYLES[cat as DetectionCategory];
-              if (!categoryStyle) return null;
-
-              return (
-                <div
-                  key={cat}
-                  className="glass-panel p-4 rounded-xl border-slate-800"
-                  style={{ borderColor: categoryStyle.borderColor.replace('border-', '').replace('/50', '') + '80' }}
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <span className={`font-semibold ${categoryStyle.color}`}>{cat}</span>
-                    <span className="text-sm text-slate-400">{data.detections} / {data.count}</span>
-                  </div>
-                  <div className="space-y-1 text-xs text-slate-400">
-                    <div>Mean: {(data.statistics.mean * 100).toFixed(1)}%</div>
-                    <div>Std Dev: {(data.statistics.stddev * 100).toFixed(1)}%</div>
-                    <div>P50: {(data.statistics.quantiles.p50 * 100).toFixed(1)}%</div>
-                  </div>
-                </div>
-              );
-            })}
-        </div>
-      </div>
 
       {/* Recent Detections */}
       {recentDetections.length > 0 && (

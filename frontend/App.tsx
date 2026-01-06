@@ -6,7 +6,6 @@ import Sidebar from './components/Sidebar';
 import LeftNav from './components/LeftNav';
 import TraceDetail from './components/TraceDetail';
 import TraceList from './components/TraceList';
-import AuditReportView from './components/AuditReportView';
 import Settings from './components/Settings';
 import AuditView from './components/AuditView';
 import DynamicDashboard from './components/DynamicDashboard';
@@ -222,15 +221,6 @@ const App: React.FC = () => {
     setSelectedTrace(null);
   };
 
-  const [selectedReportTrace, setSelectedReportTrace] = useState<Trace | null>(null);
-
-  const handleViewReport = (trace: Trace) => {
-    setSelectedReportTrace(trace);
-  };
-
-  const handleCloseReport = () => {
-    setSelectedReportTrace(null);
-  };
 
   const handleTraceAction = async (traceId: string, action: 'confirm' | 'review' | 'false_positive') => {
     let newStatus: TraceStatus = 'flagged';
@@ -331,10 +321,7 @@ const App: React.FC = () => {
       console.log('[Render] Rendering AuditView');
       return (
         <>
-          {selectedReportTrace && (
-            <AuditReportView trace={selectedReportTrace} onClose={handleCloseReport} />
-          )}
-          <AuditView settings={settings} onViewReport={handleViewReport} onResult={async (result, testCase) => {
+          <AuditView settings={settings} onResult={async (result, testCase) => {
         // Convert audit result to Trace format and add to traces
         const riskScore = Math.round(result.overall_score * 100);
         // Use settings.riskThreshold instead of hardcoded values
@@ -578,7 +565,7 @@ const App: React.FC = () => {
           />
         );
       }
-      return <TraceList traces={traces} onSelectTrace={handleSelectTraceFromList} onViewReport={handleViewReport} />;
+      return <TraceList traces={traces} onSelectTrace={handleSelectTraceFromList} />;
     }
 
     // Default: Dashboard View

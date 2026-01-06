@@ -136,7 +136,6 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
       const sections = [
         'detection-models',
         'auditor-config',
-        'sensitivity-threshold',
         'api-keys',
         'chatbot-config',
         'database-management'
@@ -241,13 +240,6 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
     });
   };
 
-  const setSensitivity = (val: 'low' | 'medium' | 'high') => {
-    onUpdate({ ...settings, sensitivity: val });
-  };
-
-  const setThreshold = (val: number) => {
-    onUpdate({ ...settings, riskThreshold: val });
-  };
 
   const setSkillForCategory = (cat: DetectionCategory, skillId: string) => {
     onUpdate({
@@ -262,7 +254,6 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
   const sections = [
     { id: 'detection-models', label: 'Active Detection Models', icon: Sliders },
     { id: 'auditor-config', label: 'Auditor Configuration', icon: Sliders },
-    { id: 'sensitivity-threshold', label: 'Sensitivity & Threshold', icon: AlertCircle },
     { id: 'api-keys', label: 'API Key Configuration', icon: Sliders },
     { id: 'database-management', label: 'Database Management', icon: Database },
   ];
@@ -569,68 +560,6 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
           </div>
         </div>
 
-        {/* Sliders & Thresholds */}
-        <div 
-          id="sensitivity-threshold"
-          ref={(el) => (sectionRefs.current['sensitivity-threshold'] = el)}
-          className="grid grid-cols-1 md:grid-cols-2 gap-8 scroll-mt-24"
-        >
-          
-          <div className="glass-panel p-6 rounded-xl border-slate-800">
-            <h3 className="text-lg font-semibold text-slate-200 mb-6">Model Sensitivity</h3>
-            <div className="space-y-6">
-              <div className="flex justify-between text-sm font-medium text-slate-400 uppercase tracking-wider">
-                <span>Low</span>
-                <span>Medium</span>
-                <span>High</span>
-              </div>
-              <input 
-                type="range" 
-                min="0" 
-                max="2" 
-                step="1"
-                value={settings.sensitivity === 'low' ? 0 : settings.sensitivity === 'medium' ? 1 : 2}
-                onChange={(e) => {
-                  const val = parseInt(e.target.value);
-                  setSensitivity(val === 0 ? 'low' : val === 1 ? 'medium' : 'high');
-                }}
-                className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-cyan-500"
-              />
-              <p className="text-sm text-slate-500">
-                Current setting: <strong className="text-cyan-400 uppercase">{settings.sensitivity}</strong>. 
-                {settings.sensitivity === 'high' 
-                  ? ' Will flag minor anomalies. Expect higher false positive rate.'
-                  : settings.sensitivity === 'low'
-                  ? ' Only flags critical, high-confidence manipulation attempts.'
-                  : ' Balanced configuration for production monitoring.'
-                }
-              </p>
-            </div>
-          </div>
-
-          <div className="glass-panel p-6 rounded-xl border-slate-800">
-            <h3 className="text-lg font-semibold text-slate-200 mb-6 flex items-center gap-2">
-              <AlertCircle size={20} className="text-amber-500" />
-              Risk Threshold
-            </h3>
-            <div className="space-y-4">
-              <div className="flex items-end gap-2 mb-2">
-                <span className="text-4xl font-bold text-white">{settings.riskThreshold}</span>
-                <span className="text-slate-500 mb-1">/ 100</span>
-              </div>
-              <input 
-                type="number" 
-                value={settings.riskThreshold}
-                onChange={(e) => setThreshold(parseInt(e.target.value))}
-                className="w-full bg-slate-950 border border-slate-700 rounded px-3 py-2 text-slate-200 focus:outline-none focus:border-cyan-500 transition-colors"
-              />
-              <p className="text-sm text-slate-500">
-                Alerts below this score will be logged silently without triggering operator notifications.
-              </p>
-            </div>
-          </div>
-
-        </div>
 
         {/* API Key Configuration */}
         <div 
