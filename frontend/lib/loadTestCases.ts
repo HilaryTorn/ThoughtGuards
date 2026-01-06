@@ -58,15 +58,16 @@ async function loadTestCasesFromDatabase(): Promise<EnrichedTestCase[]> {
       throw new Error(`HTTP ${response.status}`);
     }
 
-    const data = await response.json();
+    const data = await response.json() as { conversations?: any[] };
     const conversations = data.conversations || [];
 
     return conversations.map((conv: any) => {
-      // Extract reasoning from turns
-      const reasoningTrace = extractReasoningTrace(conv.turns);
-      
+      // Extract reasoning from turns (handle missing turns)
+      const turns = conv.turns || [];
+      const reasoningTrace = extractReasoningTrace(turns);
+
       // Map turns with reasoning and tool calls preserved
-      const enrichedTurns = conv.turns.map((turn: any, turnIdx: number) => ({
+      const enrichedTurns = turns.map((turn: any, turnIdx: number) => ({
         turn_number: turn.turn_number || turnIdx + 1,
         role: turn.role === 'customer' ? 'user' : turn.role,
         content: turn.content || '',

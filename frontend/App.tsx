@@ -39,24 +39,26 @@ const App: React.FC = () => {
       try {
         const response = await fetch('/api/audit-results?limit=1000');
         if (response.ok) {
-          const data = await response.json();
-          if (data.traces && Array.isArray(data.traces)) {
-            // Convert API traces to Trace format
-            const loadedTraces: Trace[] = data.traces.map((t: any) => ({
-              id: t.id,
-              timestamp: t.timestamp,
-              messageCount: t.messageCount,
+          const data = await response.json() as { results?: any[]; traces?: any[] };
+          // API returns { results, total, limit, offset }
+          const rawResults = data.results || data.traces || [];
+          if (Array.isArray(rawResults)) {
+            // Convert API audit results to Trace format
+            const loadedTraces: Trace[] = rawResults.map((t: any) => ({
+              id: t.trace_id || t.id,
+              timestamp: t.created_at || t.timestamp,
+              messageCount: t.conversation_data?.length || t.messageCount || 0,
               status: t.status,
-              riskScore: t.riskScore,
-              detectionEvent: t.detectionEvent,
-              conversation: t.conversation,
+              riskScore: Math.round((t.risk_score || t.overall_score || 0) * (t.risk_score > 1 ? 1 : 100)),
+              detectionEvent: t.detection_event || t.detectionEvent,
+              conversation: t.conversation_data || t.conversation || [],
               // Include audit metadata
-              auditId: t.auditId,
-              skillId: t.skillId,
-              modelName: t.modelName,
-              overallScore: t.overallScore,
+              auditId: t.audit_id || t.auditId,
+              skillId: t.skill_id || t.skillId,
+              modelName: t.model_name || t.modelName,
+              overallScore: t.overall_score || t.overallScore,
               confidence: t.confidence,
-              detectedTypes: t.detectedTypes,
+              detectedTypes: t.detected_types || t.detectedTypes,
               metrics: t.metrics,
               recommendations: t.recommendations,
               limitations: t.limitations,
