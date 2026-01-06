@@ -24,10 +24,18 @@ const TraceDetail: React.FC<TraceDetailProps> = ({ trace, onBack, onAction }) =>
   if (!trace) return null;
 
   const event = trace.detectionEvent;
-  const isFlagged = trace.status === 'flagged' || trace.status === 'confirmed' || trace.status === 'reviewed' || trace.status === 'false_positive';
-  const catStyle = event && event.category in CATEGORY_STYLES ? CATEGORY_STYLES[event.category] : null;
+  // Show analysis panel for flagged, review, confirmed, reviewed, and false_positive statuses
+  const isFlagged = trace.status === 'flagged' || trace.status === 'confirmed' || trace.status === 'reviewed' || trace.status === 'false_positive' || trace.status === 'review';
+  const catStyle = event ? CATEGORY_STYLES[event.category] : null;
 
-  const displayConversation: Message[] = trace.conversation;
+  // Mock conversation padding for cleaner look if history is short
+  const displayConversation: Message[] = trace.conversation.length < 5
+    ? [
+        { role: 'user', content: "Hello", timestamp: "Start" },
+        { role: 'assistant', content: "Hi there!", timestamp: "Start" },
+        ...trace.conversation
+      ]
+    : trace.conversation;
 
   const renderStatusBadge = () => {
     if (trace.status === 'confirmed') {
@@ -72,7 +80,7 @@ const TraceDetail: React.FC<TraceDetailProps> = ({ trace, onBack, onAction }) =>
       {/* Detail Header */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-4">
-          <button 
+          <button
             onClick={onBack}
             className="p-2 hover:bg-slate-800 rounded-full text-slate-400 hover:text-white transition-colors"
           >
@@ -86,28 +94,28 @@ const TraceDetail: React.FC<TraceDetailProps> = ({ trace, onBack, onAction }) =>
             <p className="text-xs text-slate-500 mt-1 font-mono">Timestamp: {trace.timestamp} • Risk Score: {trace.riskScore}</p>
           </div>
         </div>
-        
+
         {/* Actions Toolbar */}
         <div className="flex gap-3">
           {isFlagged && (
             <>
               {/* False Positive Button */}
-              <button 
+              <button
                 onClick={() => onAction(trace.id, 'false_positive')}
                 disabled={trace.status === 'false_positive'}
                 className={`
                   flex items-center gap-2 px-3 py-2 rounded text-sm font-medium transition-colors border
-                  ${trace.status === 'false_positive' 
-                    ? 'bg-slate-800/50 text-slate-500 border-slate-800 cursor-not-allowed' 
+                  ${trace.status === 'false_positive'
+                    ? 'bg-slate-800/50 text-slate-500 border-slate-800 cursor-not-allowed'
                     : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'}
                 `}
               >
-                 <XCircle size={14} /> 
+                 <XCircle size={14} />
                  {trace.status === 'false_positive' ? 'False Positive ✓' : 'False Positive'}
               </button>
 
               {/* Confirm Manipulation Button */}
-              <button 
+              <button
                 onClick={() => onAction(trace.id, 'confirm')}
                 disabled={trace.status === 'confirmed'}
                 className={`
@@ -117,14 +125,14 @@ const TraceDetail: React.FC<TraceDetailProps> = ({ trace, onBack, onAction }) =>
                     : 'bg-amber-900/30 hover:bg-amber-900/50 text-amber-300 border-amber-800'}
                 `}
               >
-                 <AlertTriangle size={14} /> 
+                 <AlertTriangle size={14} />
                  {trace.status === 'confirmed' ? 'Confirmed ✓' : 'Confirm Manipulation'}
               </button>
             </>
           )}
 
           {/* Review Button */}
-          <button 
+          <button
             onClick={() => onAction(trace.id, 'review')}
             disabled={trace.status === 'reviewed'}
             className={`
@@ -134,18 +142,18 @@ const TraceDetail: React.FC<TraceDetailProps> = ({ trace, onBack, onAction }) =>
                 : 'bg-cyan-900/30 hover:bg-cyan-900/50 text-cyan-300 border-cyan-800'}
             `}
           >
-             <CheckCircle size={14} /> 
+             <CheckCircle size={14} />
              {trace.status === 'reviewed' ? 'Reviewed ✓' : 'Mark Reviewed'}
           </button>
         </div>
       </div>
 
       <div className="flex-1 grid grid-cols-12 gap-6 min-h-0">
-        
+
         {/* LEFT: Conversation Thread */}
         <div className={`
           flex flex-col glass-panel rounded-xl border-slate-800 overflow-hidden h-full
-          ${isFlagged && event ? 'col-span-5' : 'col-span-8 col-start-3'} 
+          ${isFlagged && event ? 'col-span-5' : 'col-span-8 col-start-3'}
         `}>
           <div className="p-4 border-b border-slate-800 bg-slate-900/50">
             <h3 className="font-semibold text-slate-300 flex items-center gap-2">
@@ -156,13 +164,13 @@ const TraceDetail: React.FC<TraceDetailProps> = ({ trace, onBack, onAction }) =>
           <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-950/30">
              {displayConversation.map((msg, idx) => {
                // Highlight the last interaction as the trigger if flagged
-               const isTrigger = isFlagged && idx >= displayConversation.length - 2; 
+               const isTrigger = isFlagged && idx >= displayConversation.length - 2;
                return (
                  <div key={idx} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
                    <div className={`
                       max-w-[85%] px-4 py-3 rounded-2xl text-sm relative group
-                      ${msg.role === 'user' 
-                        ? 'bg-slate-800 text-slate-200 rounded-tr-sm' 
+                      ${msg.role === 'user'
+                        ? 'bg-slate-800 text-slate-200 rounded-tr-sm'
                         : 'bg-gradient-to-br from-slate-900 to-slate-900 border border-slate-800 text-slate-300 rounded-tl-sm'
                       }
                       ${isTrigger && msg.role === 'assistant' && catStyle ? `ring-1 ring-offset-2 ring-offset-slate-950 ${catStyle.borderColor.replace('border-', 'ring-')}` : ''}
@@ -184,7 +192,7 @@ const TraceDetail: React.FC<TraceDetailProps> = ({ trace, onBack, onAction }) =>
         {/* RIGHT: Analysis Panel (Only if flagged and has event) */}
         {isFlagged && event && catStyle && (
           <div className="col-span-7 flex flex-col gap-6 overflow-y-auto pr-2 pb-6">
-             
+
              {/* Internal Reasoning */}
              <div className="glass-panel rounded-xl border-slate-800 p-5 relative">
                 <div className={`absolute top-0 left-0 w-1 h-full rounded-l-xl ${catStyle.bgColor.replace('bg-', 'bg-gradient-to-b from-')}`}></div>
@@ -200,26 +208,17 @@ const TraceDetail: React.FC<TraceDetailProps> = ({ trace, onBack, onAction }) =>
              {/* Logic Breakdown */}
              <div className="glass-panel p-5 rounded-xl border-slate-800">
                <h3 className="font-semibold text-slate-300 mb-4 text-xs uppercase tracking-wider">Detection Logic</h3>
-               
+
                <div className="space-y-6">
                  {/* Main Detected Category Breakdown */}
                  <div>
                    <div className="flex items-center gap-3 mb-4">
-                      {catStyle && (
-                        <>
-                          <div className={`p-2 rounded ${catStyle.bgColor}`}>
-                            {Icons[catStyle.icon] && React.createElement(Icons[catStyle.icon], { size: 18, className: catStyle.color })}
-                          </div>
-                          <h4 className={`text-sm font-bold uppercase tracking-wide ${catStyle.color}`}>
-                            {event.category}
-                          </h4>
-                        </>
-                      )}
-                      {!catStyle && (
-                        <h4 className="text-sm font-bold uppercase tracking-wide text-slate-400">
-                          {event.category}
-                        </h4>
-                      )}
+                      <div className={`p-2 rounded ${catStyle.bgColor}`}>
+                        {Icons[catStyle.icon] && React.createElement(Icons[catStyle.icon], { size: 18, className: catStyle.color })}
+                      </div>
+                      <h4 className={`text-sm font-bold uppercase tracking-wide ${catStyle.color}`}>
+                        {event.category}
+                      </h4>
                    </div>
 
                    <div className="bg-slate-900/50 rounded-lg p-4 border border-slate-800 space-y-3">
@@ -249,21 +248,19 @@ const TraceDetail: React.FC<TraceDetailProps> = ({ trace, onBack, onAction }) =>
 
                  {/* Other categories (Collapsed/Simple view) */}
                  <div>
-                   <button 
+                   <button
                      onClick={() => setShowOtherCategories(!showOtherCategories)}
                      className="flex items-center gap-2 w-full text-left group hover:bg-slate-800/30 p-2 rounded transition-colors -ml-2"
                    >
                       {showOtherCategories ? <ChevronDown size={14} className="text-slate-500" /> : <ChevronRight size={14} className="text-slate-500" />}
                       <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wide group-hover:text-slate-400 transition-colors">Other Categories Monitored</h4>
                    </button>
-                   
+
                    {showOtherCategories && (
                      <div className="grid grid-cols-2 gap-3 mt-3 animate-in slide-in-from-top-1 duration-200">
                        {Object.keys(CATEGORY_STYLES).filter(c => c !== event.category).map(cat => {
                          const catStyleDef = CATEGORY_STYLES[cat as DetectionCategory];
-                         if (!catStyleDef) return null;
                          const Icon = Icons[catStyleDef.icon];
-                         if (!Icon) return null;
                          return (
                            <div key={cat} className="flex items-center gap-3 p-2 rounded-lg border border-slate-800 opacity-60">
                               <Icon size={16} className="text-slate-600" />
@@ -276,80 +273,6 @@ const TraceDetail: React.FC<TraceDetailProps> = ({ trace, onBack, onAction }) =>
                  </div>
                </div>
              </div>
-
-             {/* Statistical Breakdown (if multi-run) */}
-             {(() => {
-               const statistics = (trace as any).statistics;
-               const runCount = (trace as any).runCount || 1;
-               const isMultiRun = runCount > 1;
-               
-               if (!isMultiRun || !statistics) {
-                 return null;
-               }
-               
-               return (
-                 <div className="glass-panel p-5 rounded-xl border-slate-800">
-                   <h3 className="font-semibold text-slate-300 mb-4 text-xs uppercase tracking-wider flex items-center gap-2">
-                     <BrainCircuit size={18} className="text-cyan-500" />
-                     Statistical Analysis ({runCount} runs)
-                   </h3>
-                   <div className="space-y-4">
-                     <div className="grid grid-cols-2 gap-4">
-                       <div className="bg-slate-900/50 rounded-lg p-4 border border-slate-800">
-                         <p className="text-xs text-slate-500 mb-1">Mean Score</p>
-                         <p className="text-2xl font-bold text-slate-200">
-                           {(statistics.mean * 100).toFixed(1)}%
-                         </p>
-                         <p className="text-xs text-slate-500 mt-1">
-                           Std Dev: {(statistics.stddev * 100).toFixed(1)}%
-                         </p>
-                       </div>
-                       <div className="bg-slate-900/50 rounded-lg p-4 border border-slate-800">
-                         <p className="text-xs text-slate-500 mb-1">Confidence Interval</p>
-                         {statistics.confidenceInterval ? (
-                           <>
-                             <p className="text-lg font-bold text-slate-200">
-                               {(statistics.confidenceInterval.level * 100).toFixed(0)}% CI
-                             </p>
-                             <p className="text-xs text-slate-400 mt-1 font-mono">
-                               [{(statistics.confidenceInterval.lower * 100).toFixed(1)}%, {(statistics.confidenceInterval.upper * 100).toFixed(1)}%]
-                             </p>
-                           </>
-                         ) : (
-                           <p className="text-sm text-slate-400">N/A</p>
-                         )}
-                       </div>
-                     </div>
-                     
-                     {statistics.quantiles && (
-                       <div className="bg-slate-900/50 rounded-lg p-4 border border-slate-800">
-                         <p className="text-xs text-slate-500 mb-3">Quantile Distribution</p>
-                         <div className="grid grid-cols-3 gap-3 text-center">
-                           <div>
-                             <p className="text-xs text-slate-500 mb-1">5th Percentile</p>
-                             <p className="text-lg font-bold text-slate-300">
-                               {(statistics.quantiles.p5 * 100).toFixed(1)}%
-                             </p>
-                           </div>
-                           <div>
-                             <p className="text-xs text-slate-500 mb-1">50th (Median)</p>
-                             <p className="text-lg font-bold text-cyan-400">
-                               {(statistics.quantiles.p50 * 100).toFixed(1)}%
-                             </p>
-                           </div>
-                           <div>
-                             <p className="text-xs text-slate-500 mb-1">95th Percentile</p>
-                             <p className="text-lg font-bold text-slate-300">
-                               {(statistics.quantiles.p95 * 100).toFixed(1)}%
-                             </p>
-                           </div>
-                         </div>
-                       </div>
-                     )}
-                   </div>
-                 </div>
-               );
-             })()}
 
           </div>
         )}

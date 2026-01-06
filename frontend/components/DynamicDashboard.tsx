@@ -1,8 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Activity, AlertTriangle, BarChart3, Loader2 } from 'lucide-react';
+import { Radio, Loader2, AlertTriangle } from 'lucide-react';
 import { DetectionCategory, DetectionEvent, Message } from '../types';
 import { CATEGORY_STYLES } from '../constants';
+import StatsCard from './StatsCard';
 import DetectionCard from './DetectionCard';
+import Sidebar from './Sidebar';
+import SystemMetrics from './SystemMetrics';
 
 interface DashboardStats {
   totalAnalyzed: number;
@@ -16,14 +19,6 @@ interface DashboardStats {
       quantiles: { p5: number; p50: number; p95: number };
     };
   }>;
-  timeSeries: Array<{ date: string; count: number; detections: number }>;
-  modelPerformance: Record<string, {
-    total: number;
-    detections: number;
-    meanScore: number;
-    stddev: number;
-  }>;
-  riskScoreDistribution: Record<string, number>;
 }
 
 interface DynamicDashboardProps {
@@ -36,6 +31,11 @@ const DynamicDashboard: React.FC<DynamicDashboardProps> = ({ settings, onViewTra
   const [recentDetections, setRecentDetections] = useState<DetectionEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Filter State
+  const [activeCategories, setActiveCategories] = useState<DetectionCategory[]>(
+    Object.keys(CATEGORY_STYLES) as DetectionCategory[]
+  );
 
   useEffect(() => {
     const loadStats = async () => {
@@ -58,26 +58,19 @@ const DynamicDashboard: React.FC<DynamicDashboardProps> = ({ settings, onViewTra
 
     const loadRecentDetections = async () => {
       try {
-        // Fetch recent audit results (all results, not filtered by score)
         const response = await fetch('/api/audit-results?limit=10');
         if (!response.ok) return;
 
-        const data = await response.json();
+        const data = await response.json() as { traces?: any[] };
         const traces = data.traces || [];
 
-        // Transform audit results to DetectionEvent format
-        const detections: DetectionEvent[] = traces
-          .filter((t: any) => t.detectedTypes && t.detectedTypes.length > 0)
-          .map((t: any) => {
-            // Find the primary detection type with evidence
-            const primaryDetection = t.detectedTypes.find((d: any) => d.evidence?.length > 0) || t.detectedTypes[0];
+        const detections: DetectionEvent[] = traces.map((t: any) => {
+            const primaryDetection = t.detectedTypes?.find((d: any) => d.evidence?.length > 0) || t.detectedTypes?.[0];
             const evidence = primaryDetection?.evidence?.[0] || {};
 
-            // Extract reasoning trace from conversation
             const reasoningTurn = t.conversation?.find((msg: any) => msg.reasoning_trace);
             const fullCoT = reasoningTurn?.reasoning_trace || evidence.snippet || 'No reasoning trace available';
 
-            // Get conversation history as Message[]
             const conversationHistory: Message[] = (t.conversation || []).map((msg: any) => ({
               role: msg.role === 'customer' ? 'user' : msg.role,
               content: msg.content,
@@ -87,9 +80,9 @@ const DynamicDashboard: React.FC<DynamicDashboardProps> = ({ settings, onViewTra
             return {
               id: t.id || t.auditId,
               category: (t.primaryCategory || primaryDetection?.category || 'Reward Hacking') as DetectionCategory,
-              riskScore: Math.round((t.overallScore || 0) * 100),
-              timestamp: t.timestamp || new Date(t.createdAt).toLocaleTimeString(),
-              snippet: evidence.snippet || primaryDetection?.type || 'Detection found',
+              riskScore: Math.round((t.overallScore || t.riskScore / 100 || 0) * 100),
+              timestamp: t.timestamp || (t.createdAt ? new Date(t.createdAt).toLocaleTimeString() : 'N/A'),
+              snippet: evidence.snippet || primaryDetection?.type || t.skillId || 'Audit result',
               fullCoT,
               conversationHistory,
               matchedPatterns: t.detectedTypes?.map((d: any) => d.type) || [],
@@ -109,13 +102,20 @@ const DynamicDashboard: React.FC<DynamicDashboardProps> = ({ settings, onViewTra
     loadStats();
     loadRecentDetections();
 
-    // Refresh every 30 seconds
     const interval = setInterval(() => {
       loadStats();
       loadRecentDetections();
     }, 30000);
     return () => clearInterval(interval);
   }, []);
+
+  const toggleCategory = (cat: DetectionCategory) => {
+    setActiveCategories(prev =>
+      prev.includes(cat)
+        ? prev.filter(c => c !== cat)
+        : [...prev, cat]
+    );
+  };
 
   if (loading) {
     return (
@@ -145,130 +145,74 @@ const DynamicDashboard: React.FC<DynamicDashboardProps> = ({ settings, onViewTra
     );
   }
 
-  // Convert stats to format expected by existing components
+  // Calculate category counts from stats
   const categoryCounts: Record<DetectionCategory, number> = Object.keys(CATEGORY_STYLES).reduce((acc, cat) => {
     const categoryData = stats.byCategory[cat] || { count: 0, detections: 0 };
     acc[cat as DetectionCategory] = categoryData.detections;
     return acc;
   }, {} as Record<DetectionCategory, number>);
 
-  // Filter categories to only include valid DetectionCategory values
-  const validCategories = Object.entries(stats.byCategory)
-    .filter(([cat]) => cat in CATEGORY_STYLES)
-    .filter(([cat, data]) => data.detections > 0);
-
-  const activeCategories = Object.keys(CATEGORY_STYLES).filter(
-    cat => settings.categories && settings.categories[cat as DetectionCategory]
-  ) as DetectionCategory[];
-
-  const filteredDetections = validCategories
-    .filter(([cat]) => activeCategories.includes(cat as DetectionCategory))
-    .map(([cat, data]) => ({
-      category: cat as DetectionCategory,
-      detections: data.detections,
-      count: data.count,
-      meanScore: data.statistics.mean,
-      stddev: data.statistics.stddev
-    }))
-    .filter(({ meanScore }) => Math.round(meanScore * 100) >= settings.riskThreshold)
-    .sort((a, b) => b.meanScore - a.meanScore)
-    .slice(0, 10); // Top 10
+  // Filter detections based on active categories and threshold
+  const filteredDetections = recentDetections.filter(d =>
+    activeCategories.includes(d.category) &&
+    settings.categories[d.category] &&
+    d.riskScore >= settings.riskThreshold
+  );
 
   return (
-    <div className="space-y-8">
-      {/* Summary Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="glass-panel p-6 rounded-xl border-l-4 border-cyan-500/50 flex items-center justify-between">
-          <div>
-            <p className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-1">Total Analyzed</p>
-            <p className="text-2xl font-bold text-slate-100">{stats.totalAnalyzed}</p>
-          </div>
-          <div className="p-3 rounded-lg bg-cyan-500/10">
-            <Activity className="w-6 h-6 text-cyan-400" />
-          </div>
-        </div>
-        <div className="glass-panel p-6 rounded-xl border-l-4 border-red-500/50 flex items-center justify-between">
-          <div>
-            <p className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-1">Total Detections</p>
-            <p className="text-2xl font-bold text-slate-100">{stats.totalDetections}</p>
-          </div>
-          <div className="p-3 rounded-lg bg-red-500/10">
-            <AlertTriangle className="w-6 h-6 text-red-400" />
-          </div>
-        </div>
-        <div className="glass-panel p-6 rounded-xl border-l-4 border-amber-500/50 flex items-center justify-between">
-          <div>
-            <p className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-1">Detection Rate</p>
-            <p className="text-2xl font-bold text-slate-100">
-              {stats.totalAnalyzed > 0 ? `${Math.round((stats.totalDetections / stats.totalAnalyzed) * 100)}%` : '0%'}
-            </p>
-          </div>
-          <div className="p-3 rounded-lg bg-amber-500/10">
-            <BarChart3 className="w-6 h-6 text-amber-400" />
-          </div>
-        </div>
+    <>
+      {/* System Metrics Bar */}
+      <SystemMetrics
+        counts={categoryCounts}
+        totalAnalyzed={stats.totalAnalyzed}
+        totalDetections={stats.totalDetections}
+      />
+
+      {/* Stats Cards Row */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
+        {(Object.keys(CATEGORY_STYLES) as DetectionCategory[]).map(cat => (
+          <StatsCard key={cat} style={CATEGORY_STYLES[cat]} count={categoryCounts[cat]} />
+        ))}
       </div>
 
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
 
-      {/* Recent Detections */}
-      {recentDetections.length > 0 && (
-        <div>
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-2xl font-bold text-slate-100">Recent Detections</h2>
-            <span className="text-xs text-slate-500">Showing {recentDetections.length} events</span>
+        {/* Main Feed */}
+        <div className="lg:col-span-3 space-y-4">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-slate-100 flex items-center gap-2">
+              <Radio size={18} className="text-cyan-500" />
+              Detection Feed
+            </h2>
+            <span className="text-xs text-slate-500">Showing {filteredDetections.length} events</span>
           </div>
-          {recentDetections.map((event) => (
-            <DetectionCard
-              key={event.id}
-              event={event}
-              onViewTrace={onViewTrace || (() => {})}
-            />
-          ))}
-        </div>
-      )}
 
-      {/* Category Summary Cards (replacing Detection Cards for now) */}
-      {filteredDetections.length > 0 && (
-        <div>
-          <h2 className="text-2xl font-bold text-slate-100 mb-6">Top Detected Categories</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredDetections.map(({ category, detections, count, meanScore, stddev }) => {
-              const categoryStyle = CATEGORY_STYLES[category];
-              if (!categoryStyle) return null;
-              
-              return (
-                <div
-                  key={category}
-                  className="glass-panel p-6 rounded-xl border-slate-800"
-                  style={{ borderColor: categoryStyle.borderColor.replace('border-', '').replace('/50', '') + '80' }}
-                >
-                  <div className="flex items-center justify-between mb-4">
-                    <span className={`font-semibold ${categoryStyle.color}`}>{category}</span>
-                    <span className="text-sm text-slate-400">{detections} / {count}</span>
-                  </div>
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-slate-500">Mean Score</span>
-                      <span className="text-lg font-bold text-slate-200">
-                        {(meanScore * 100).toFixed(1)}%
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-slate-500">Std Dev</span>
-                      <span className="text-sm font-mono text-slate-400">
-                        {(stddev * 100).toFixed(1)}%
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+          {filteredDetections.length > 0 ? (
+            filteredDetections.map((event) => (
+              <DetectionCard
+                key={event.id}
+                event={event}
+                onViewTrace={onViewTrace || (() => {})}
+              />
+            ))
+          ) : (
+            <div className="text-center py-20 text-slate-500 bg-slate-900/30 rounded-xl border border-dashed border-slate-800">
+              No detections found for selected filters or thresholds.
+            </div>
+          )}
         </div>
-      )}
-    </div>
+
+        {/* Right Sidebar */}
+        <div className="lg:col-span-1">
+          <Sidebar
+            activeCategories={activeCategories}
+            toggleCategory={toggleCategory}
+            counts={categoryCounts}
+          />
+        </div>
+      </div>
+    </>
   );
 };
 
 export default DynamicDashboard;
-
