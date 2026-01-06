@@ -1,0 +1,58 @@
+# Cloudflare Workers Local Development Environment Variables
+# Copy this file to .dev.vars and fill in your API keys
+#
+# IMPORTANT: Never commit .dev.vars to version control!
+# This file is for local development only.
+# For production, use: wrangler secret put KEY_NAME
+
+# ============================================================================
+# Required: At least one LLM provider API key
+# ============================================================================
+
+# Google Gemini API Key (recommended for local testing)
+# Get your key at: https://aistudio.google.com/app/apikey
+GEMINI_API_KEY=your_gemini_api_key_here
+
+# Alternative: Google API Key (also works for Gemini)
+# GOOGLE_API_KEY=your_google_api_key_here
+
+# ============================================================================
+# Optional: Additional LLM Provider API Keys
+# ============================================================================
+
+# DeepSeek API Key
+# Supports: deepseek-reasoner, deepseek-r1, deepseek-chat
+# Get your key at: https://platform.deepseek.com/api_keys
+DEEPSEEK_API_KEY=your_deepseek_key_here
+
+# Anthropic Claude API Key
+# Supports: claude-sonnet-4-20250514, claude-3-7-sonnet-20250219, claude-3-5-sonnet-20241022
+# Get your key at: https://console.anthropic.com/settings/keys
+ANTHROPIC_API_KEY=your_anthropic_key_here
+
+# OpenAI API Key
+# Supports: gpt-4o, gpt-4o-mini, o1-preview, o1-mini, o3-mini
+# Get your key at: https://platform.openai.com/api-keys
+OPENAI_API_KEY=your_openai_key_here
+
+# ============================================================================
+# Production Setup
+# ============================================================================
+# For production deployment on Cloudflare, set secrets using:
+#
+#   wrangler secret put GEMINI_API_KEY
+#   wrangler secret put DEEPSEEK_API_KEY
+#   wrangler secret put ANTHROPIC_API_KEY
+#   wrangler secret put OPENAI_API_KEY
+#
+# Or set them in the Cloudflare Dashboard:
+#   Workers & Pages > Your Project > Settings > Environment Variables
+#
+# ============================================================================
+# Supported Models by Provider
+# ============================================================================
+# Google: gemini-3-flash-preview, gemini-2.5-flash, gemini-1.5-pro
+# DeepSeek: deepseek-reasoner, deepseek-r1, deepseek-chat
+# Anthropic: claude-sonnet-4-20250514, claude-3-7-sonnet-20250219, claude-3-5-sonnet-20241022
+# OpenAI: gpt-4o, gpt-4o-mini, o1-preview, o1-mini, o3-mini
+

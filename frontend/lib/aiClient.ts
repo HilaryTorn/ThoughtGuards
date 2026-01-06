@@ -73,13 +73,13 @@ class AIService {
   private static getApiKey(): string {
     // Check for BYOK (Bring Your Own Key) in localStorage first
     if (typeof window !== 'undefined') {
-      const byokKey = localStorage.getItem('BYOK_API_KEY');
+      const byokKey = localStorage.getItem('BYOK_API_KEY') || localStorage.getItem('GEMINI_API_KEY');
       if (byokKey && byokKey.trim().length > 0) {
         return byokKey.trim();
       }
     }
     // Fall back to environment variable
-    return process.env.API_KEY || '';
+    return process.env.API_KEY || process.env.GEMINI_API_KEY || '';
   }
 
   /**

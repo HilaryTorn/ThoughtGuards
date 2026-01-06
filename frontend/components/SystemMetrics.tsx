@@ -3,11 +3,37 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 
 import { DetectionCategory } from '../types';
 import { CATEGORY_STYLES } from '../constants';
 
-interface SystemMetricsProps {
-  counts: Record<DetectionCategory, number>;
+interface DashboardStats {
+  totalAnalyzed: number;
+  totalDetections: number;
+  byCategory: Record<string, {
+    count: number;
+    detections: number;
+    statistics: {
+      mean: number;
+      stddev: number;
+      quantiles: { p5: number; p50: number; p95: number };
+    };
+  }>;
 }
 
-const SystemMetrics: React.FC<SystemMetricsProps> = ({ counts }) => {
+interface SystemMetricsProps {
+  counts?: Record<DetectionCategory, number>;
+  stats?: DashboardStats;
+}
+
+const SystemMetrics: React.FC<SystemMetricsProps> = ({ counts, stats }) => {
+  // Use stats if provided, otherwise fall back to counts
+  const categoryCounts: Record<DetectionCategory, number> = stats
+    ? Object.keys(CATEGORY_STYLES).reduce((acc, cat) => {
+        const categoryData = stats.byCategory[cat] || { detections: 0 };
+        acc[cat as DetectionCategory] = categoryData.detections;
+        return acc;
+      }, {} as Record<DetectionCategory, number>)
+    : (counts || {} as Record<DetectionCategory, number>);
+
+  const totalAnalyzed = stats?.totalAnalyzed || 0;
+  const totalDetections = stats?.totalDetections || 0;
   // Transform colors from Tailwind classes to Hex for Recharts
   const COLOR_MAP: Record<string, string> = {
     'text-blue-400': '#60a5fa',
@@ -18,15 +44,16 @@ const SystemMetrics: React.FC<SystemMetricsProps> = ({ counts }) => {
     'text-pink-400': '#e879f9',
   };
 
-  const chartData = Object.keys(CATEGORY_STYLES).map((key) => ({
-    name: key.split(' ')[0], // Short name
-    fullName: key,
-    count: counts[key as DetectionCategory] || 0,
-    color: COLOR_MAP[CATEGORY_STYLES[key as DetectionCategory].color]
-  }));
+  const chartData = Object.keys(CATEGORY_STYLES).map((key) => {
+    const categoryStyle = CATEGORY_STYLES[key as DetectionCategory];
+    return {
+      name: key.split(' ')[0], // Short name
+      fullName: key,
+      count: categoryCounts[key as DetectionCategory] || 0,
+      color: COLOR_MAP[categoryStyle.color] || '#94a3b8'
+    };
+  });
 
-  const totalAnalyzed = 50; // Mocked as per requirement
-  const totalDetections = 43; // Mocked as per requirement
 
   return (
     <div className="glass-panel p-6 rounded-xl border-slate-800 mb-8 grid grid-cols-1 md:grid-cols-2 gap-8 items-center">

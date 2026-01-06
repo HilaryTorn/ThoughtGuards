@@ -20,6 +20,13 @@ interface DetectionCardProps {
 const DetectionCard: React.FC<DetectionCardProps> = ({ event, onViewTrace }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const style = CATEGORY_STYLES[event.category];
+  
+  // If category doesn't exist in CATEGORY_STYLES, return null or use default
+  if (!style) {
+    console.warn(`Unknown category: ${event.category}`);
+    return null;
+  }
+  
   const Icon = Icons[style.icon];
 
   // Helper to highlight specific snippets in full text

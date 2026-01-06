@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, List, Settings, Shield, FileText } from 'lucide-react';
+import { LayoutDashboard, List, Settings, Shield, FileText, MessageSquare } from 'lucide-react';
 import { AppView } from '../types';
 
 interface LeftNavProps {
@@ -11,7 +11,8 @@ const LeftNav: React.FC<LeftNavProps> = ({ currentView, onNavigate }) => {
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'traces', label: 'Traces', icon: List },
-    { id: 'audit', label: 'Audit', icon: FileText },
+    { id: 'audit', label: 'Processing', icon: FileText },
+    { id: 'chat', label: 'Chat', icon: MessageSquare },
     { id: 'settings', label: 'Settings', icon: Settings },
   ] as const;
 

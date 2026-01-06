@@ -25,7 +25,7 @@ const TraceDetail: React.FC<TraceDetailProps> = ({ trace, onBack, onAction }) =>
 
   const event = trace.detectionEvent;
   const isFlagged = trace.status === 'flagged' || trace.status === 'confirmed' || trace.status === 'reviewed' || trace.status === 'false_positive';
-  const catStyle = event ? CATEGORY_STYLES[event.category] : null;
+  const catStyle = event && event.category in CATEGORY_STYLES ? CATEGORY_STYLES[event.category] : null;
 
   // Mock conversation padding for cleaner look if history is short
   const displayConversation: Message[] = trace.conversation.length < 5 
@@ -212,12 +212,21 @@ const TraceDetail: React.FC<TraceDetailProps> = ({ trace, onBack, onAction }) =>
                  {/* Main Detected Category Breakdown */}
                  <div>
                    <div className="flex items-center gap-3 mb-4">
-                      <div className={`p-2 rounded ${catStyle.bgColor}`}>
-                        {Icons[catStyle.icon] && React.createElement(Icons[catStyle.icon], { size: 18, className: catStyle.color })}
-                      </div>
-                      <h4 className={`text-sm font-bold uppercase tracking-wide ${catStyle.color}`}>
-                        {event.category}
-                      </h4>
+                      {catStyle && (
+                        <>
+                          <div className={`p-2 rounded ${catStyle.bgColor}`}>
+                            {Icons[catStyle.icon] && React.createElement(Icons[catStyle.icon], { size: 18, className: catStyle.color })}
+                          </div>
+                          <h4 className={`text-sm font-bold uppercase tracking-wide ${catStyle.color}`}>
+                            {event.category}
+                          </h4>
+                        </>
+                      )}
+                      {!catStyle && (
+                        <h4 className="text-sm font-bold uppercase tracking-wide text-slate-400">
+                          {event.category}
+                        </h4>
+                      )}
                    </div>
 
                    <div className="bg-slate-900/50 rounded-lg p-4 border border-slate-800 space-y-3">
@@ -259,7 +268,9 @@ const TraceDetail: React.FC<TraceDetailProps> = ({ trace, onBack, onAction }) =>
                      <div className="grid grid-cols-2 gap-3 mt-3 animate-in slide-in-from-top-1 duration-200">
                        {Object.keys(CATEGORY_STYLES).filter(c => c !== event.category).map(cat => {
                          const catStyleDef = CATEGORY_STYLES[cat as DetectionCategory];
+                         if (!catStyleDef) return null;
                          const Icon = Icons[catStyleDef.icon];
+                         if (!Icon) return null;
                          return (
                            <div key={cat} className="flex items-center gap-3 p-2 rounded-lg border border-slate-800 opacity-60">
                               <Icon size={16} className="text-slate-600" />
@@ -272,6 +283,80 @@ const TraceDetail: React.FC<TraceDetailProps> = ({ trace, onBack, onAction }) =>
                  </div>
                </div>
              </div>
+
+             {/* Statistical Breakdown (if multi-run) */}
+             {(() => {
+               const statistics = (trace as any).statistics;
+               const runCount = (trace as any).runCount || 1;
+               const isMultiRun = runCount > 1;
+               
+               if (!isMultiRun || !statistics) {
+                 return null;
+               }
+               
+               return (
+                 <div className="glass-panel p-5 rounded-xl border-slate-800">
+                   <h3 className="font-semibold text-slate-300 mb-4 text-xs uppercase tracking-wider flex items-center gap-2">
+                     <BrainCircuit size={18} className="text-cyan-500" />
+                     Statistical Analysis ({runCount} runs)
+                   </h3>
+                   <div className="space-y-4">
+                     <div className="grid grid-cols-2 gap-4">
+                       <div className="bg-slate-900/50 rounded-lg p-4 border border-slate-800">
+                         <p className="text-xs text-slate-500 mb-1">Mean Score</p>
+                         <p className="text-2xl font-bold text-slate-200">
+                           {(statistics.mean * 100).toFixed(1)}%
+                         </p>
+                         <p className="text-xs text-slate-500 mt-1">
+                           Std Dev: {(statistics.stddev * 100).toFixed(1)}%
+                         </p>
+                       </div>
+                       <div className="bg-slate-900/50 rounded-lg p-4 border border-slate-800">
+                         <p className="text-xs text-slate-500 mb-1">Confidence Interval</p>
+                         {statistics.confidenceInterval ? (
+                           <>
+                             <p className="text-lg font-bold text-slate-200">
+                               {(statistics.confidenceInterval.level * 100).toFixed(0)}% CI
+                             </p>
+                             <p className="text-xs text-slate-400 mt-1 font-mono">
+                               [{(statistics.confidenceInterval.lower * 100).toFixed(1)}%, {(statistics.confidenceInterval.upper * 100).toFixed(1)}%]
+                             </p>
+                           </>
+                         ) : (
+                           <p className="text-sm text-slate-400">N/A</p>
+                         )}
+                       </div>
+                     </div>
+                     
+                     {statistics.quantiles && (
+                       <div className="bg-slate-900/50 rounded-lg p-4 border border-slate-800">
+                         <p className="text-xs text-slate-500 mb-3">Quantile Distribution</p>
+                         <div className="grid grid-cols-3 gap-3 text-center">
+                           <div>
+                             <p className="text-xs text-slate-500 mb-1">5th Percentile</p>
+                             <p className="text-lg font-bold text-slate-300">
+                               {(statistics.quantiles.p5 * 100).toFixed(1)}%
+                             </p>
+                           </div>
+                           <div>
+                             <p className="text-xs text-slate-500 mb-1">50th (Median)</p>
+                             <p className="text-lg font-bold text-cyan-400">
+                               {(statistics.quantiles.p50 * 100).toFixed(1)}%
+                             </p>
+                           </div>
+                           <div>
+                             <p className="text-xs text-slate-500 mb-1">95th Percentile</p>
+                             <p className="text-lg font-bold text-slate-300">
+                               {(statistics.quantiles.p95 * 100).toFixed(1)}%
+                             </p>
+                           </div>
+                         </div>
+                       </div>
+                     )}
+                   </div>
+                 </div>
+               );
+             })()}
 
           </div>
         )}

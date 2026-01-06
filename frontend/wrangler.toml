@@ -1,0 +1,32 @@
+# Cloudflare Pages Functions and D1 Configuration
+
+name = "thoughtguards-chatbot"
+compatibility_date = "2024-01-01"
+
+# Pages Functions configuration
+pages_build_output_dir = "dist"
+
+# D1 Database binding
+[[d1_databases]]
+binding = "DB"
+database_name = "thoughtguards-db"
+database_id = "" # Will be set after creating database with: wrangler d1 create thoughtguards-db
+# For local development, database is created automatically
+
+# Local development configuration
+[env.development]
+name = "thoughtguards-chatbot-dev"
+
+# Environment variables (set in Cloudflare dashboard or via wrangler secret put)
+# [vars]
+# GEMINI_API_KEY = ""
+# DEEPSEEK_API_KEY = ""
+# ANTHROPIC_API_KEY = ""
+# OPENAI_API_KEY = ""
+
+# Secrets should be set via:
+# wrangler secret put GEMINI_API_KEY
+# wrangler secret put DEEPSEEK_API_KEY
+# wrangler secret put ANTHROPIC_API_KEY
+# wrangler secret put OPENAI_API_KEY
+

@@ -1,16 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { Shield, Radio, Activity, LayoutDashboard, ShoppingCart, CheckCircle, AlertTriangle, Info, FileText } from 'lucide-react';
-import { MOCK_DETECTIONS, MOCK_TRACES, CATEGORY_STYLES } from './constants';
+import { CATEGORY_STYLES } from './constants';
 import { DetectionCategory, AppView, AppSettings, Trace, TraceStatus, Message, DetectionEvent } from './types';
-import StatsCard from './components/StatsCard';
-import DetectionCard from './components/DetectionCard';
 import Sidebar from './components/Sidebar';
 import LeftNav from './components/LeftNav';
 import TraceDetail from './components/TraceDetail';
 import TraceList from './components/TraceList';
+import AuditReportView from './components/AuditReportView';
 import Settings from './components/Settings';
-import SystemMetrics from './components/SystemMetrics';
 import AuditView from './components/AuditView';
+import CustomerChat from './components/CustomerChat';
+import DynamicDashboard from './components/DynamicDashboard';
 import { AuditResult } from './lib/types';
 import { CATEGORY_TO_SKILL, AVAILABLE_SKILLS } from './lib/skillsRegistry';
 
@@ -24,21 +24,120 @@ const App: React.FC = () => {
     if (!localStorage.getItem('BYOK_API_KEY')) {
       if (envKey) {
         localStorage.setItem('BYOK_API_KEY', envKey);
-      } else {
-        // Fallback: Set directly from .env.local value (for development)
-        // This is a workaround if Vite isn't loading .env.local properly
-        const fallbackKey = 'AIzaSyDr9EKzik_TZEP1xtWj9uc782bHQ6twigA';
-        localStorage.setItem('BYOK_API_KEY', fallbackKey);
       }
+      // Note: Users must set their API key via .dev.vars (local) or wrangler secret put (production)
+      // No fallback key should be hardcoded in the repository
     }
   }, []);
 
   // Data State
-  const [traces, setTraces] = useState<Trace[]>(MOCK_TRACES);
+  const [traces, setTraces] = useState<Trace[]>([]);
+  const [tracesLoaded, setTracesLoaded] = useState(false);
+
+  // Load traces from database on mount
+  useEffect(() => {
+    const loadTraces = async () => {
+      try {
+        const response = await fetch('/api/audit-results?limit=1000');
+        if (response.ok) {
+          const data = await response.json();
+          if (data.traces && Array.isArray(data.traces)) {
+            // Convert API traces to Trace format
+            const loadedTraces: Trace[] = data.traces.map((t: any) => ({
+              id: t.id,
+              timestamp: t.timestamp,
+              messageCount: t.messageCount,
+              status: t.status,
+              riskScore: t.riskScore,
+              detectionEvent: t.detectionEvent,
+              conversation: t.conversation,
+              // Include audit metadata
+              auditId: t.auditId,
+              skillId: t.skillId,
+              modelName: t.modelName,
+              overallScore: t.overallScore,
+              confidence: t.confidence,
+              detectedTypes: t.detectedTypes,
+              metrics: t.metrics,
+              recommendations: t.recommendations,
+              limitations: t.limitations,
+              usage: t.usage,
+            }));
+            setTraces(loadedTraces);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to load traces:', error);
+        // Fallback to empty array
+        setTraces([]);
+      } finally {
+        setTracesLoaded(true);
+      }
+    };
+
+    loadTraces();
+  }, []);
+
+  // Initialize view from URL hash on mount
+  const getInitialView = (): AppView => {
+    if (typeof window === 'undefined') return 'dashboard';
+    const hash = window.location.hash;
+    const viewMap: Record<string, AppView> = {
+      '#dashboard': 'dashboard',
+      '#traces': 'traces',
+      '#processing': 'audit', // Processing tab uses 'audit' view
+      '#audit': 'audit',
+      '#chat': 'chat',
+      '#settings': 'settings',
+    };
+    return viewMap[hash] || 'dashboard';
+  };
 
   // Navigation State
-  const [currentView, setCurrentView] = useState<AppView>('dashboard');
+  const [currentView, setCurrentView] = useState<AppView>(getInitialView());
   const [selectedTrace, setSelectedTrace] = useState<Trace | null>(null);
+
+  // URL-based routing
+  useEffect(() => {
+    const handleHashChange = () => {
+      const hash = window.location.hash;
+      
+      // Handle settings section navigation (e.g., #settings/database-management)
+      if (hash.startsWith('#settings/')) {
+        const sectionId = hash.replace('#settings/', '');
+        // Settings component will handle scrolling to section
+        setCurrentView('settings');
+        return;
+      }
+      
+      // Handle main view navigation
+      const viewMap: Record<string, AppView> = {
+        '#dashboard': 'dashboard',
+        '#traces': 'traces',
+        '#processing': 'audit', // Processing tab uses 'audit' view
+        '#audit': 'audit',
+        '#chat': 'chat',
+        '#settings': 'settings',
+      };
+      
+      if (hash && viewMap[hash]) {
+        const newView = viewMap[hash];
+        console.log(`[Navigation] Hash: ${hash} -> View: ${newView}`);
+        setCurrentView(newView);
+      } else if (!hash) {
+        // Default to dashboard if no hash
+        console.log('[Navigation] No hash -> View: dashboard');
+        setCurrentView('dashboard');
+      }
+    };
+
+    // Check hash on mount (in case URL already has hash)
+    handleHashChange();
+
+    // Listen for hash changes
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []); // Empty dependency array - only run on mount
 
   // Filter State (Dashboard)
   const [activeCategories, setActiveCategories] = useState<DetectionCategory[]>(
@@ -61,6 +160,11 @@ const App: React.FC = () => {
       auditorModel: 'gemini-3-flash-preview',
       thinkingBudget: undefined,
       includeValidatorCoT: true,
+      chatbotMode: 'helpful',
+      // Multi-run statistical analysis settings
+      multiRunCount: 1, // Default to single-run (no statistical analysis)
+      multiRunTemperature: undefined, // Optional temperature for variation
+      multiRunSeed: undefined, // Optional seed for reproducibility
     };
   });
 
@@ -75,22 +179,25 @@ const App: React.FC = () => {
     }
   }, [toast]);
 
-  // Derived Data
-  const categoryCounts: Record<DetectionCategory, number> = Object.keys(CATEGORY_STYLES).reduce((acc, cat) => {
-    acc[cat as DetectionCategory] = MOCK_DETECTIONS.filter(d => d.category === cat).length;
-    return acc;
-  }, {} as Record<DetectionCategory, number>);
-
-  const filteredDetections = MOCK_DETECTIONS.filter(d => 
-    activeCategories.includes(d.category) && 
-    settings.categories[d.category] && 
-    d.riskScore >= settings.riskThreshold 
-  );
+  // Derived Data - Now loaded dynamically from dashboard-stats API
+  // categoryCounts and filteredDetections are now handled by DynamicDashboard component
 
   // Handlers
   const handleNavigate = (view: AppView) => {
     setCurrentView(view);
     setSelectedTrace(null); // Clear selection when changing main views
+    
+    // Update URL hash for direct navigation
+    const hashMap: Record<AppView, string> = {
+      'dashboard': '#dashboard',
+      'traces': '#traces',
+      'audit': '#processing', // 'audit' view uses '#processing' URL for Processing tab
+      'chat': '#chat',
+      'settings': '#settings',
+    };
+    if (hashMap[view]) {
+      window.history.replaceState(null, '', hashMap[view]);
+    }
   };
 
   const handleViewTraceFromDashboard = (eventId: string) => {
@@ -109,7 +216,17 @@ const App: React.FC = () => {
     setSelectedTrace(null);
   };
 
-  const handleTraceAction = (traceId: string, action: 'confirm' | 'review' | 'false_positive') => {
+  const [selectedReportTrace, setSelectedReportTrace] = useState<Trace | null>(null);
+
+  const handleViewReport = (trace: Trace) => {
+    setSelectedReportTrace(trace);
+  };
+
+  const handleCloseReport = () => {
+    setSelectedReportTrace(null);
+  };
+
+  const handleTraceAction = async (traceId: string, action: 'confirm' | 'review' | 'false_positive') => {
     let newStatus: TraceStatus = 'flagged';
     let message = '';
     let type: 'success' | 'alert' | 'info' = 'info';
@@ -130,6 +247,46 @@ const App: React.FC = () => {
         message = 'Marked as false positive';
         type = 'info';
         break;
+    }
+
+    // Update in database
+    try {
+      const trace = traces.find(t => t.id === traceId);
+      if (trace) {
+        // Fetch the audit result to get all fields, then update status
+        const response = await fetch(`/api/audit-results?limit=1000`);
+        if (response.ok) {
+          const data = await response.json();
+          const auditResult = data.traces?.find((t: any) => t.id === traceId);
+          if (auditResult) {
+            // Update the status in the database
+            await fetch('/api/audit-results', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                audit_id: auditResult.auditId,
+                trace_id: traceId,
+                conversation_id: auditResult.conversationId,
+                skill_id: auditResult.skillId,
+                model_name: auditResult.modelName,
+                overall_score: auditResult.overallScore,
+                confidence: auditResult.confidence,
+                status: newStatus,
+                risk_score: trace.riskScore,
+                detected_types: auditResult.detectedTypes,
+                metrics: auditResult.metrics,
+                recommendations: auditResult.recommendations,
+                limitations: auditResult.limitations,
+                usage: auditResult.usage,
+                detection_event: trace.detectionEvent,
+                conversation_data: trace.conversation,
+              }),
+            });
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error updating trace status:', error);
     }
 
     // Update global trace list state
@@ -156,27 +313,56 @@ const App: React.FC = () => {
     setSettings(newSettings);
   };
 
-  // Render Logic
+    // Render Logic
   const renderContent = () => {
+    console.log(`[Render] currentView: ${currentView}`);
+    
     if (currentView === 'settings') {
       return <Settings settings={settings} onUpdate={handleSettingsUpdate} />;
     }
 
+    if (currentView === 'chat') {
+      return (
+        <div className="h-full flex flex-col">
+          <CustomerChat 
+            chatbotMode={settings.chatbotMode || 'helpful'}
+            model={settings.auditorModel}
+            thinkingBudget={settings.thinkingBudget}
+          />
+        </div>
+      );
+    }
+
     if (currentView === 'audit') {
-      return <AuditView settings={settings} onResult={(result, testCase) => {
+      console.log('[Render] Rendering AuditView');
+      return (
+        <>
+          {selectedReportTrace && (
+            <AuditReportView trace={selectedReportTrace} onClose={handleCloseReport} />
+          )}
+          <AuditView settings={settings} onViewReport={handleViewReport} onResult={async (result, testCase) => {
         // Convert audit result to Trace format and add to traces
         const riskScore = Math.round(result.overall_score * 100);
         // Use settings.riskThreshold instead of hardcoded values
         const status: TraceStatus = riskScore >= settings.riskThreshold ? 'flagged' : riskScore >= (settings.riskThreshold * 0.6) ? 'review' : 'clean';
         
-        // Convert turns to messages
-        const conversation: Message[] = testCase.turns.map(turn => ({
-          role: turn.role as 'user' | 'assistant',
-          content: turn.content,
-          timestamp: turn.timestamp
-        }));
+        // Convert turns to messages, including reasoning_trace if available
+        // Also include the conversation-level reasoning_trace on assistant messages
+        const conversation: Message[] = testCase.turns.map((turn, idx) => {
+          const msg: Message = {
+            role: turn.role as 'user' | 'assistant',
+            content: turn.content,
+            timestamp: turn.timestamp,
+            reasoning_trace: (turn as any).reasoning_trace // Include turn-level reasoning trace if present
+          };
+          // If this is the last assistant turn and conversation has reasoning_trace, add it
+          if (turn.role === 'assistant' && idx === testCase.turns.length - 1 && testCase.reasoning_trace) {
+            msg.reasoning_trace = testCase.reasoning_trace;
+          }
+          return msg;
+        });
 
-        // Determine category from test case or skill
+        // Determine category from multi-skill result, test case, or skill
         const testCaseCategoryMap: Record<string, DetectionCategory> = {
           'Opinion': 'Persona Manipulation',
           'Answer': 'Goal Reasoning',
@@ -186,12 +372,15 @@ const App: React.FC = () => {
           'Reward Hacking': 'Reward Hacking',
         };
         
-        // Get category from test case, or infer from skill_id
+        // Get category from multi-skill result (primary_category), test case, or infer from skill_id
         let detectedCategory: DetectionCategory = 'Deception Planning'; // default
-        if (testCase.category && testCaseCategoryMap[testCase.category]) {
+        if (result.primary_category && result.primary_category !== 'none') {
+          // Use primary category from multi-skill detection
+          detectedCategory = result.primary_category as DetectionCategory;
+        } else if (testCase.category && testCaseCategoryMap[testCase.category]) {
           detectedCategory = testCaseCategoryMap[testCase.category];
         } else if (result.skill_id) {
-          // Map skill_id to category
+          // Map skill_id to category (fallback for single-skill results)
           const skillToCategory: Record<string, DetectionCategory> = {
             'sycophancy-auditor': 'Persona Manipulation',
             'reward-hacking-auditor': 'Reward Hacking',
@@ -288,15 +477,72 @@ const App: React.FC = () => {
           };
         }
 
+        const traceId = `audit-${result.id}`;
         const newTrace: Trace = {
-          id: `audit-${result.id}`,
+          id: traceId,
           timestamp: new Date(result.timestamp).toLocaleTimeString(),
           messageCount: conversation.length,
           status: finalStatus,
           riskScore: finalRiskScore,
           detectionEvent,
-          conversation
+          conversation,
+          // Include audit metadata
+          auditId: result.id,
+          conversationId: result.conversation_id,
+          skillId: result.skill_id,
+          modelName: result.model_name,
+          overallScore: result.overall_score,
+          confidence: result.confidence,
+          detectedTypes: result.detected_types,
+          metrics: result.metrics,
+          recommendations: result.recommendations,
+          limitations: result.limitations,
+          usage: result.usage,
+          // Multi-skill fields
+          skillResults: result.skill_results,
+          combinedScore: result.combined_score,
+          primaryCategory: result.primary_category,
+          secondaryCategories: result.secondary_categories,
+          detectionMetadata: result.detection_metadata,
         };
+
+        // Save to database
+        try {
+          const saveResponse = await fetch('/api/audit-results', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              audit_id: result.id,
+              trace_id: traceId,
+              conversation_id: result.conversation_id,
+              skill_id: result.skill_id,
+              model_name: result.model_name,
+              overall_score: result.overall_score,
+              confidence: result.confidence,
+              status: finalStatus,
+              risk_score: finalRiskScore,
+              detected_types: result.detected_types,
+              metrics: result.metrics,
+              recommendations: result.recommendations,
+              limitations: result.limitations,
+              usage: result.usage,
+              detection_event: detectionEvent,
+              conversation_data: conversation,
+              // Multi-skill fields
+              skill_results: result.skill_results,
+              combined_score: result.combined_score,
+              primary_category: result.primary_category,
+              secondary_categories: result.secondary_categories,
+              detection_metadata: result.detection_metadata,
+            }),
+          });
+
+          if (!saveResponse.ok) {
+            console.error('Failed to save audit result to database');
+          }
+        } catch (error) {
+          console.error('Error saving audit result:', error);
+        }
 
         // Add to traces (avoid duplicates)
         setTraces(prev => {
@@ -312,7 +558,9 @@ const App: React.FC = () => {
           message: `Audit completed: ${riskScore}% risk score`, 
           type: status === 'flagged' ? 'alert' : status === 'review' ? 'info' : 'success' 
         });
-      }} />;
+      }} />
+        </>
+      );
     }
 
     if (currentView === 'traces') {
@@ -325,59 +573,12 @@ const App: React.FC = () => {
           />
         );
       }
-      return <TraceList traces={traces} onSelectTrace={handleSelectTraceFromList} />;
+      return <TraceList traces={traces} onSelectTrace={handleSelectTraceFromList} onViewReport={handleViewReport} />;
     }
 
     // Default: Dashboard View
     return (
-      <>
-          {/* New Metrics Section */}
-          <SystemMetrics counts={categoryCounts} />
-
-          {/* Stats Cards Row (Retained for quick access to specific counts, but could be removed if redundant) */}
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
-            {(Object.keys(CATEGORY_STYLES) as DetectionCategory[]).map(cat => (
-              <StatsCard key={cat} style={CATEGORY_STYLES[cat]} count={categoryCounts[cat]} />
-            ))}
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-            
-            {/* Main Feed */}
-            <div className="lg:col-span-3 space-y-4">
-              <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-lg font-semibold text-slate-100 flex items-center gap-2">
-                    <Radio size={18} className="text-cyan-500" />
-                    Detection Feed
-                  </h2>
-                  <span className="text-xs text-slate-500">Showing {filteredDetections.length} events</span>
-              </div>
-              
-              {filteredDetections.length > 0 ? (
-                filteredDetections.map((event) => (
-                  <DetectionCard 
-                    key={event.id} 
-                    event={event} 
-                    onViewTrace={handleViewTraceFromDashboard}
-                  />
-                ))
-              ) : (
-                <div className="text-center py-20 text-slate-500 bg-slate-900/30 rounded-xl border border-dashed border-slate-800">
-                  No detections found for selected filters or thresholds.
-                </div>
-              )}
-            </div>
-
-            {/* Right Sidebar */}
-            <div className="lg:col-span-1">
-              <Sidebar 
-                  activeCategories={activeCategories}
-                  toggleCategory={toggleCategory}
-                  counts={categoryCounts}
-              />
-            </div>
-          </div>
-      </>
+      <DynamicDashboard settings={settings} />
     );
   };
 
@@ -385,6 +586,7 @@ const App: React.FC = () => {
     if (currentView === 'dashboard') return 'Live Monitoring Dashboard';
     if (currentView === 'traces') return selectedTrace ? `Investigation: ${selectedTrace.id}` : 'Trace History';
     if (currentView === 'audit') return 'Safety Audit';
+    if (currentView === 'chat') return 'Customer Chat';
     return 'System Settings';
   };
 
@@ -422,7 +624,7 @@ const App: React.FC = () => {
         </header>
 
         {/* Page Content */}
-        <main className="max-w-7xl mx-auto px-6 py-8">
+        <main className={`max-w-7xl mx-auto ${currentView === 'chat' ? 'p-0 h-[calc(100vh-4rem)]' : 'px-6 py-8'}`}>
           {renderContent()}
         </main>
 
