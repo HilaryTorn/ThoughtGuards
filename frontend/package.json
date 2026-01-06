@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "dev:local": "npx wrangler pages dev dist --d1=DB=thoughtguards-db --local",
+    "dev:worker": "npm run build && npx wrangler dev",
+    "dev:local": "npm run build && npx wrangler dev --local",
     "build": "npm run generate-test-cases-manifest && vite build",
     "preview": "vite preview",
     "generate-test-cases-manifest": "node scripts/generate-test-cases-manifest.js",
@@ -33,12 +34,14 @@
   },
   "dependencies": {
     "@google/genai": "^1.3.0",
+    "hono": "^4.11.3",
     "lucide-react": "^0.562.0",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
     "recharts": "^3.6.0"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260103.0",
     "@types/node": "^22.14.0",
     "@vitejs/plugin-react": "^5.0.0",
     "better-sqlite3": "^12.5.0",
