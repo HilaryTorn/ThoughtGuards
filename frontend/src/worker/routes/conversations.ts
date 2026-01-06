@@ -148,7 +148,7 @@ conversationsRoutes.post('/', async (c) => {
     const now = new Date().toISOString();
 
     await db.prepare(`
-      INSERT INTO conversations (
+      INSERT OR IGNORE INTO conversations (
         conversation_id, customer_id, chatbot_mode, chatbot_provider, chatbot_model, started_at
       ) VALUES (?, ?, ?, ?, ?, ?)
     `).bind(

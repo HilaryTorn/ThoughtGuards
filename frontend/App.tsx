@@ -492,6 +492,17 @@ const App: React.FC = () => {
 
         // Save to database
         try {
+          // First, ensure conversation exists (for FK constraint)
+          await fetch('/api/conversations', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              conversation_id: result.conversation_id,
+              customer_id: 'audit-customer',
+              label: testCase.label || 'Audit Test Case',
+            }),
+          });
+
           const saveResponse = await fetch('/api/audit-results', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
