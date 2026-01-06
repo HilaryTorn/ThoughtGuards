@@ -94,7 +94,7 @@ export interface ChartDataPoint {
 }
 
 // Renamed views to match new requirements
-export type AppView = 'dashboard' | 'traces' | 'settings' | 'audit' | 'chat';
+export type AppView = 'dashboard' | 'traces' | 'settings' | 'audit';
 
 export interface AppSettings {
   categories: Record<DetectionCategory, boolean>;

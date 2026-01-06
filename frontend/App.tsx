@@ -9,7 +9,6 @@ import TraceList from './components/TraceList';
 import AuditReportView from './components/AuditReportView';
 import Settings from './components/Settings';
 import AuditView from './components/AuditView';
-import CustomerChat from './components/CustomerChat';
 import DynamicDashboard from './components/DynamicDashboard';
 import { AuditResult } from './lib/types';
 import { CATEGORY_TO_SKILL, AVAILABLE_SKILLS } from './lib/skillsRegistry';
@@ -87,7 +86,6 @@ const App: React.FC = () => {
       '#traces': 'traces',
       '#processing': 'audit', // Processing tab uses 'audit' view
       '#audit': 'audit',
-      '#chat': 'chat',
       '#settings': 'settings',
     };
     return viewMap[hash] || 'dashboard';
@@ -116,7 +114,6 @@ const App: React.FC = () => {
         '#traces': 'traces',
         '#processing': 'audit', // Processing tab uses 'audit' view
         '#audit': 'audit',
-        '#chat': 'chat',
         '#settings': 'settings',
       };
       
@@ -192,7 +189,6 @@ const App: React.FC = () => {
       'dashboard': '#dashboard',
       'traces': '#traces',
       'audit': '#processing', // 'audit' view uses '#processing' URL for Processing tab
-      'chat': '#chat',
       'settings': '#settings',
     };
     if (hashMap[view]) {
@@ -319,18 +315,6 @@ const App: React.FC = () => {
     
     if (currentView === 'settings') {
       return <Settings settings={settings} onUpdate={handleSettingsUpdate} />;
-    }
-
-    if (currentView === 'chat') {
-      return (
-        <div className="h-full flex flex-col">
-          <CustomerChat 
-            chatbotMode={settings.chatbotMode || 'helpful'}
-            model={settings.auditorModel}
-            thinkingBudget={settings.thinkingBudget}
-          />
-        </div>
-      );
     }
 
     if (currentView === 'audit') {
@@ -586,7 +570,6 @@ const App: React.FC = () => {
     if (currentView === 'dashboard') return 'Live Monitoring Dashboard';
     if (currentView === 'traces') return selectedTrace ? `Investigation: ${selectedTrace.id}` : 'Trace History';
     if (currentView === 'audit') return 'Safety Audit';
-    if (currentView === 'chat') return 'Customer Chat';
     return 'System Settings';
   };
 
@@ -624,7 +607,7 @@ const App: React.FC = () => {
         </header>
 
         {/* Page Content */}
-        <main className={`max-w-7xl mx-auto ${currentView === 'chat' ? 'p-0 h-[calc(100vh-4rem)]' : 'px-6 py-8'}`}>
+        <main className="max-w-7xl mx-auto px-6 py-8">
           {renderContent()}
         </main>
 
