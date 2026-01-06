@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Activity, TrendingUp, AlertTriangle, BarChart3, Loader2 } from 'lucide-react';
-import { DetectionCategory } from '../types';
+import { DetectionCategory, DetectionEvent, Message } from '../types';
 import { CATEGORY_STYLES } from '../constants';
 import SystemMetrics from './SystemMetrics';
+import DetectionCard from './DetectionCard';
 
 interface DashboardStats {
   totalAnalyzed: number;
@@ -28,10 +29,12 @@ interface DashboardStats {
 
 interface DynamicDashboardProps {
   settings: any;
+  onViewTrace?: (traceId: string) => void;
 }
 
-const DynamicDashboard: React.FC<DynamicDashboardProps> = ({ settings }) => {
+const DynamicDashboard: React.FC<DynamicDashboardProps> = ({ settings, onViewTrace }) => {
   const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [recentDetections, setRecentDetections] = useState<DetectionEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -54,9 +57,64 @@ const DynamicDashboard: React.FC<DynamicDashboardProps> = ({ settings }) => {
       }
     };
 
+    const loadRecentDetections = async () => {
+      try {
+        // Fetch recent audit results (all results, not filtered by score)
+        const response = await fetch('/api/audit-results?limit=10');
+        if (!response.ok) return;
+
+        const data = await response.json();
+        const traces = data.traces || [];
+
+        // Transform audit results to DetectionEvent format
+        const detections: DetectionEvent[] = traces
+          .filter((t: any) => t.detectedTypes && t.detectedTypes.length > 0)
+          .map((t: any) => {
+            // Find the primary detection type with evidence
+            const primaryDetection = t.detectedTypes.find((d: any) => d.evidence?.length > 0) || t.detectedTypes[0];
+            const evidence = primaryDetection?.evidence?.[0] || {};
+
+            // Extract reasoning trace from conversation
+            const reasoningTurn = t.conversation?.find((msg: any) => msg.reasoning_trace);
+            const fullCoT = reasoningTurn?.reasoning_trace || evidence.snippet || 'No reasoning trace available';
+
+            // Get conversation history as Message[]
+            const conversationHistory: Message[] = (t.conversation || []).map((msg: any) => ({
+              role: msg.role === 'customer' ? 'user' : msg.role,
+              content: msg.content,
+              timestamp: msg.timestamp
+            }));
+
+            return {
+              id: t.id || t.auditId,
+              category: (t.primaryCategory || primaryDetection?.category || 'Reward Hacking') as DetectionCategory,
+              riskScore: Math.round((t.overallScore || 0) * 100),
+              timestamp: t.timestamp || new Date(t.createdAt).toLocaleTimeString(),
+              snippet: evidence.snippet || primaryDetection?.type || 'Detection found',
+              fullCoT,
+              conversationHistory,
+              matchedPatterns: t.detectedTypes?.map((d: any) => d.type) || [],
+              confidence: {
+                model: t.overallScore || 0,
+                heuristic: 0.8
+              }
+            };
+          });
+
+        setRecentDetections(detections);
+      } catch (err) {
+        console.error('Error loading recent detections:', err);
+      }
+    };
+
     loadStats();
+    loadRecentDetections();
+
     // Refresh every 30 seconds
-    const interval = setInterval(loadStats, 30000);
+    const interval = setInterval(() => {
+      loadStats();
+      loadRecentDetections();
+    }, 30000);
     return () => clearInterval(interval);
   }, []);
 
@@ -119,6 +177,9 @@ const DynamicDashboard: React.FC<DynamicDashboardProps> = ({ settings }) => {
 
   return (
     <div className="space-y-8">
+      {/* System Metrics - Overview at the top */}
+      <SystemMetrics stats={stats} />
+
       {/* Summary Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="glass-panel p-6 rounded-xl border-l-4 border-cyan-500/50 flex items-center justify-between">
@@ -157,11 +218,11 @@ const DynamicDashboard: React.FC<DynamicDashboardProps> = ({ settings }) => {
         <h2 className="text-2xl font-bold text-slate-100 mb-6">Detections by Category</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {Object.entries(stats.byCategory)
-            .filter(([cat, data]) => data.detections > 0 && cat in CATEGORY_STYLES)
+            .filter(([cat, data]) => (data as any).count > 0 && cat in CATEGORY_STYLES)
             .map(([cat, data]) => {
               const categoryStyle = CATEGORY_STYLES[cat as DetectionCategory];
               if (!categoryStyle) return null;
-              
+
               return (
                 <div
                   key={cat}
@@ -182,6 +243,23 @@ const DynamicDashboard: React.FC<DynamicDashboardProps> = ({ settings }) => {
             })}
         </div>
       </div>
+
+      {/* Recent Detections */}
+      {recentDetections.length > 0 && (
+        <div>
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-2xl font-bold text-slate-100">Recent Detections</h2>
+            <span className="text-xs text-slate-500">Showing {recentDetections.length} events</span>
+          </div>
+          {recentDetections.map((event) => (
+            <DetectionCard
+              key={event.id}
+              event={event}
+              onViewTrace={onViewTrace || (() => {})}
+            />
+          ))}
+        </div>
+      )}
 
       {/* Category Summary Cards (replacing Detection Cards for now) */}
       {filteredDetections.length > 0 && (
@@ -222,9 +300,6 @@ const DynamicDashboard: React.FC<DynamicDashboardProps> = ({ settings }) => {
           </div>
         </div>
       )}
-
-      {/* System Metrics */}
-      <SystemMetrics stats={stats} />
     </div>
   );
 };

@@ -7,7 +7,7 @@ import type { Env } from '../index';
 
 export const conversationsRoutes = new Hono<{ Bindings: Env }>();
 
-// Get all conversations with pagination
+// Get all conversations with pagination (includes turns for each conversation)
 conversationsRoutes.get('/', async (c) => {
   const db = c.env.DB;
   const limit = parseInt(c.req.query('limit') || '50');
@@ -48,6 +48,37 @@ conversationsRoutes.get('/', async (c) => {
     params.push(limit, offset);
 
     const result = await db.prepare(query).bind(...params).all();
+    const conversations = result.results || [];
+
+    // Fetch turns for each conversation
+    const conversationsWithTurns = await Promise.all(
+      conversations.map(async (conv: any) => {
+        const turnsResult = await db.prepare(`
+          SELECT
+            turn_id,
+            turn_number,
+            role,
+            content,
+            reasoning_content,
+            timestamp
+          FROM conversation_turns
+          WHERE conversation_id = ?
+          ORDER BY turn_number
+        `).bind(conv.conversation_id).all();
+
+        return {
+          ...conv,
+          turns: (turnsResult.results || []).map((turn: any) => ({
+            turn_id: turn.turn_id,
+            turn_number: turn.turn_number,
+            role: turn.role,
+            content: turn.content,
+            reasoning_content: turn.reasoning_content,
+            timestamp: turn.timestamp,
+          }))
+        };
+      })
+    );
 
     // Get total count
     let countQuery = 'SELECT COUNT(*) as count FROM conversations WHERE 1=1';
@@ -66,7 +97,7 @@ conversationsRoutes.get('/', async (c) => {
     const countResult = await db.prepare(countQuery).bind(...countParams).first<{ count: number }>();
 
     return c.json({
-      conversations: result.results || [],
+      conversations: conversationsWithTurns,
       total: countResult?.count || 0,
       limit,
       offset

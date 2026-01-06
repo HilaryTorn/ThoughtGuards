@@ -44,25 +44,33 @@ const App: React.FC = () => {
           const rawResults = data.results || data.traces || [];
           if (Array.isArray(rawResults)) {
             // Convert API audit results to Trace format
+            // API returns camelCase fields
             const loadedTraces: Trace[] = rawResults.map((t: any) => ({
-              id: t.trace_id || t.id,
-              timestamp: t.created_at || t.timestamp,
-              messageCount: t.conversation_data?.length || t.messageCount || 0,
+              id: t.id,
+              timestamp: t.timestamp || t.createdAt,
+              messageCount: t.messageCount || t.conversation?.length || 0,
               status: t.status,
-              riskScore: Math.round((t.risk_score || t.overall_score || 0) * (t.risk_score > 1 ? 1 : 100)),
-              detectionEvent: t.detection_event || t.detectionEvent,
-              conversation: t.conversation_data || t.conversation || [],
+              riskScore: Math.round((t.riskScore || t.overallScore || 0) * (t.riskScore > 1 ? 1 : 100)),
+              detectionEvent: t.detectionEvent,
+              conversation: t.conversation || [],
               // Include audit metadata
-              auditId: t.audit_id || t.auditId,
-              skillId: t.skill_id || t.skillId,
-              modelName: t.model_name || t.modelName,
-              overallScore: t.overall_score || t.overallScore,
+              auditId: t.auditId,
+              conversationId: t.conversationId,
+              skillId: t.skillId,
+              modelName: t.modelName,
+              overallScore: t.overallScore,
               confidence: t.confidence,
-              detectedTypes: t.detected_types || t.detectedTypes,
+              detectedTypes: t.detectedTypes,
               metrics: t.metrics,
               recommendations: t.recommendations,
               limitations: t.limitations,
               usage: t.usage,
+              // Multi-skill fields
+              skillResults: t.skillResults,
+              combinedScore: t.combinedScore,
+              primaryCategory: t.primaryCategory,
+              secondaryCategories: t.secondaryCategories,
+              detectionMetadata: t.detectionMetadata,
             }));
             setTraces(loadedTraces);
           }
@@ -575,7 +583,7 @@ const App: React.FC = () => {
 
     // Default: Dashboard View
     return (
-      <DynamicDashboard settings={settings} />
+      <DynamicDashboard settings={settings} onViewTrace={handleViewTraceFromDashboard} />
     );
   };
 

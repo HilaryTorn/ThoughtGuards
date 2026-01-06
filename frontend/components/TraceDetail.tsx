@@ -27,14 +27,7 @@ const TraceDetail: React.FC<TraceDetailProps> = ({ trace, onBack, onAction }) =>
   const isFlagged = trace.status === 'flagged' || trace.status === 'confirmed' || trace.status === 'reviewed' || trace.status === 'false_positive';
   const catStyle = event && event.category in CATEGORY_STYLES ? CATEGORY_STYLES[event.category] : null;
 
-  // Mock conversation padding for cleaner look if history is short
-  const displayConversation: Message[] = trace.conversation.length < 5 
-    ? [
-        { role: 'user', content: "Hello", timestamp: "Start" },
-        { role: 'assistant', content: "Hi there!", timestamp: "Start" },
-        ...trace.conversation
-      ]
-    : trace.conversation;
+  const displayConversation: Message[] = trace.conversation;
 
   const renderStatusBadge = () => {
     if (trace.status === 'confirmed') {
