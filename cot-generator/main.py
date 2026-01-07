@@ -83,6 +83,13 @@ def main():
     )
 
     parser.add_argument(
+        "--per-persona",
+        type=int,
+        metavar="N",
+        help="Generate N conversations per persona (use with --modes and --personas)"
+    )
+
+    parser.add_argument(
         "--provider",
         type=str,
         choices=["deepseek-r1", "claude-3.7-sonnet", "claude-sonnet-4", "gpt-4o", "qwen-qwq", "mistral", "gemini-2.5-flash", "o4-mini"],
@@ -150,6 +157,20 @@ def main():
             count_per_pairing=args.adversarial
         )
         print(f"\nAdversarial batch complete!")
+        print(f"Output file: {output_file}")
+        return
+
+    # Run per-persona batch
+    if args.per_persona:
+        modes = args.modes.split(",") if args.modes else None
+        personas = args.personas.split(",") if args.personas else None
+        orchestrator = ConversationOrchestrator()
+        output_file = orchestrator.run_per_persona_batch(
+            count_per_persona=args.per_persona,
+            modes=modes,
+            personas=personas
+        )
+        print(f"\nPer-persona batch complete!")
         print(f"Output file: {output_file}")
         return
 

@@ -1290,6 +1290,85 @@ class ConversationOrchestrator:
 
         return str(batch_dir)
 
+    def run_per_persona_batch(
+        self,
+        count_per_persona: int = 1,
+        modes: Optional[List[str]] = None,
+        personas: Optional[List[str]] = None
+    ) -> str:
+        """
+        Generate N conversations per persona for specified modes.
+
+        This is useful for generating clean/helpful conversations across all personas,
+        or for generating a specific number of conversations per persona-mode combination.
+
+        Args:
+            count_per_persona: Number of conversations per persona
+            modes: List of modes to use (default: all modes)
+            personas: List of persona IDs to use (default: all personas)
+
+        Returns:
+            Path to output directory
+        """
+        from src.personas import list_persona_ids
+        from src.chatbot_modes import list_modes as get_all_modes
+
+        # Use all if not specified
+        modes = modes or get_all_modes()
+        personas = personas or list_persona_ids()
+
+        # Calculate total
+        total_convos = len(personas) * len(modes) * count_per_persona
+
+        # Create output directory with provider name
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        provider_name = config.CHATBOT_PROVIDER.replace("/", "_").replace(":", "_")
+        batch_dir = Path(config.OUTPUT_DIR) / f"{provider_name}_clean_batch_{timestamp}"
+        batch_dir.mkdir(parents=True, exist_ok=True)
+
+        print(f"Generating per-persona batch:")
+        print(f"  Personas: {len(personas)}")
+        print(f"  Modes: {modes}")
+        print(f"  Count per persona-mode: {count_per_persona}")
+        print(f"  Total conversations: {total_convos}")
+        print(f"  Output directory: {batch_dir}")
+
+        success_count = 0
+        conv_num = 0
+
+        for mode in modes:
+            for persona_id in personas:
+                print(f"\n[{mode} + {persona_id}]")
+
+                for i in tqdm(range(count_per_persona), desc=f"{mode[:10]}+{persona_id[:10]}"):
+                    conv_num += 1
+                    conv_id = f"clean_{conv_num:05d}_{mode}_{persona_id}"
+
+                    try:
+                        conversation = self.run_conversation(persona_id, mode, conv_id)
+
+                        # Add metadata
+                        conversation["label"] = "clean" if mode in ["helpful", "policy_enforcer"] else "standard"
+                        conversation["batch_type"] = "per_persona"
+
+                        # Save individual file
+                        model_name = config.CHATBOT_MODEL.replace("/", "_").replace(":", "_")
+                        conv_file = batch_dir / f"{conv_id}_{model_name}.json"
+                        with open(conv_file, "w") as f:
+                            json.dump(conversation, f, indent=2)
+                        success_count += 1
+
+                    except Exception as e:
+                        print(f"Error in conversation {conv_id}: {e}")
+                        continue
+
+                    time.sleep(config.DELAY_BETWEEN_CONVERSATIONS)
+
+        print(f"\nComplete! Generated {success_count}/{total_convos} conversations")
+        print(f"Output saved to {batch_dir}")
+
+        return str(batch_dir)
+
     def _get_pressure_description(self, mode: str, persona_id: str) -> str:
         """Get description of what manipulation pressure this pairing creates."""
         pressures = {

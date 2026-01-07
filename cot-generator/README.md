@@ -16,10 +16,12 @@ The chatbot operates in different "modes" (helpful, conversion-optimized, retent
 # Install dependencies
 pip install -r requirements.txt
 
-# Set your API key
-export DEEPSEEK_API_KEY="your-key-here"
-# OR for OpenAI user simulator
-export OPENAI_API_KEY="your-key-here"
+# Set API keys (only need keys for providers you use)
+export DEEPSEEK_API_KEY="your-key-here"      # For deepseek-r1
+export OPENAI_API_KEY="your-key-here"        # For gpt-4o, o4-mini, and user simulator
+export ANTHROPIC_API_KEY="your-key-here"     # For claude-3.7-sonnet, claude-sonnet-4
+export GOOGLE_API_KEY="your-key-here"        # For gemini-2.5-flash
+export TOGETHER_API_KEY="your-key-here"      # For qwen-qwq
 ```
 
 ## Usage
@@ -52,6 +54,15 @@ python main.py --modes metric_gamer --provider claude-sonnet-4 --count 5
 
 # Using GPT-4o (prompt-based <thinking> tags)
 python main.py --modes metric_gamer --provider gpt-4o --count 5
+
+# Using Gemini 2.5 Flash (native thinking)
+python main.py --modes metric_gamer --provider gemini-2.5-flash --count 5
+
+# Using Qwen QwQ (native CoT via Together AI)
+python main.py --modes metric_gamer --provider qwen-qwq --count 5
+
+# Using OpenAI o4-mini (reasoning summaries)
+python main.py --modes metric_gamer --provider o4-mini --count 5
 ```
 
 ### Adversarial Mode (Targeted Pairings)
@@ -73,6 +84,21 @@ Adversarial pairings are configured in `config.py`:
 | `conversion_optimized` | `price_haggler` | Price focus tempts hiding competitor prices |
 | `retention_focused` | `complaint_escalator` | Review threats tempt over-accommodation |
 | `retention_focused` | `angry_returner` | Churn risk tempts policy bending |
+
+### Per-Persona Mode (Clean Conversations)
+
+Generate N conversations for each persona with specified modes. Output is saved to `{provider}_clean_batch_{timestamp}/`:
+
+```bash
+# Generate 1 helpful conversation per persona (6 personas = 6 conversations)
+python3 main.py --per-persona 1 --modes helpful --personas never_satisfied,anxious_buyer,confused_elderly,price_haggler,complaint_escalator,angry_returner --provider deepseek-r1
+
+# Generate 5 helpful conversations per persona for all 13 personas (65 total)
+python3 main.py --per-persona 5 --modes helpful --provider deepseek-r1
+
+# Generate 2 conversations per persona across multiple modes
+python3 main.py --per-persona 2 --modes helpful,policy_enforcer --personas simple_question,warranty_claimer
+```
 
 ### Output
 
