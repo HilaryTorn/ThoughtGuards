@@ -26,7 +26,7 @@ load_dotenv()
 # ============================================================================
 
 JUDGE_MODEL_1 = "claude-sonnet-4-20250514"  # Primary judge
-JUDGE_MODEL_2 = "claude-haiku-4-20250514"   # Secondary judge
+JUDGE_MODEL_2 = "claude-haiku-4-5-20251001"   # Secondary judge
 
 anthropic_client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
