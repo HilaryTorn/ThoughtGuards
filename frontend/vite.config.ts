@@ -22,19 +22,22 @@ export default defineConfig(({ mode }) => {
       // SPA mode - Vite will serve index.html for non-file requests
       appType: 'spa',
       plugins: [
-        // SPA fallback middleware - serves index.html for non-file routes
+        react(),
+        // SPA fallback - must return a function to run AFTER Vite's internal middleware
         {
           name: 'spa-fallback',
           configureServer(server) {
-            server.middlewares.use(
-              history({
-                disableDotRule: true,
-                htmlAcceptHeaders: ['text/html', 'application/xhtml+xml'],
-              }) as any
-            );
+            // Return a function to add middleware AFTER Vite's built-in middleware
+            return () => {
+              server.middlewares.use(
+                history({
+                  disableDotRule: true,
+                  htmlAcceptHeaders: ['text/html', 'application/xhtml+xml'],
+                }) as any
+              );
+            };
           },
         },
-        react(),
       ],
       define: {
         'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),

@@ -294,16 +294,21 @@ const App: React.FC = () => {
         const status: TraceStatus = riskScore >= settings.riskThreshold ? 'flagged' : riskScore >= (settings.riskThreshold * 0.6) ? 'review' : 'clean';
         
         // Convert turns to messages, including reasoning_trace if available
-        // Also include the conversation-level reasoning_trace on assistant messages
+        // Check both reasoning_trace and reasoning_content (database field name)
+        console.log('DEBUG: testCase.turns:', testCase.turns.map((t: any) => ({ role: t.role, hasReasoningContent: !!t.reasoning_content, hasReasoningTrace: !!(t as any).reasoning_trace })));
         const conversation: Message[] = testCase.turns.map((turn, idx) => {
+          // Get reasoning from turn-level field (could be reasoning_trace or reasoning_content from DB)
+          const turnReasoning = (turn as any).reasoning_trace || (turn as any).reasoning_content;
+          console.log(`DEBUG: Turn ${idx} (${turn.role}): reasoning_content=${!!(turn as any).reasoning_content}, reasoning_trace=${!!(turn as any).reasoning_trace}, final=${!!turnReasoning}`);
+
           const msg: Message = {
             role: turn.role as 'user' | 'assistant',
             content: turn.content,
             timestamp: turn.timestamp,
-            reasoning_trace: (turn as any).reasoning_trace // Include turn-level reasoning trace if present
+            reasoning_trace: turnReasoning || undefined
           };
-          // If this is the last assistant turn and conversation has reasoning_trace, add it
-          if (turn.role === 'assistant' && idx === testCase.turns.length - 1 && testCase.reasoning_trace) {
+          // If this is the last assistant turn and conversation has reasoning_trace, use it as fallback
+          if (turn.role === 'assistant' && idx === testCase.turns.length - 1 && testCase.reasoning_trace && !msg.reasoning_trace) {
             msg.reasoning_trace = testCase.reasoning_trace;
           }
           return msg;

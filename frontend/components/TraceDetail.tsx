@@ -150,6 +150,11 @@ const TraceDetail: React.FC<TraceDetailProps> = ({ trace, onBack, onAction }) =>
                  turns.push({ ...currentTurn, turnNumber });
                }
 
+               // Check if we have patterns with valid message indices
+               const hasValidPatternQuotes = trace.patterns?.some(p =>
+                 p.quotes?.some(q => typeof q.message_index === 'number')
+               );
+
                return turns.map((turn, idx) => {
                  // Determine if this turn is offending
                  const turnMsgIndices: number[] = [];
@@ -159,12 +164,33 @@ const TraceDetail: React.FC<TraceDetailProps> = ({ trace, onBack, onAction }) =>
                    }
                  });
 
-                 const isOffending = isFlagged && (
-                   // Check if any pattern references messages in this turn
-                   (trace.patterns?.some(p => p.quotes?.some(q => turnMsgIndices.includes(q.message_index)))) ||
-                   // Fallback: highlight last turn if no specific pattern
-                   (!trace.patterns?.length && idx === turns.length - 1)
+                 // Flag turns that have issues:
+                 // 1. If patterns have quotes with message_index, flag turns that match
+                 // 2. If no valid pattern quotes, fallback to last turn only
+                 const matchesPattern = trace.patterns?.some(p =>
+                   p.quotes?.some(q => turnMsgIndices.includes(q.message_index))
                  );
+
+                 const isLastTurnFallback = !hasValidPatternQuotes && idx === turns.length - 1;
+
+                 const isOffending = isFlagged && (matchesPattern || isLastTurnFallback);
+
+                 // Collect ALL evidence snippets for highlighting in CoT
+                 const evidenceSnippets: string[] = [];
+                 if (isOffending) {
+                   // Add event snippet if available
+                   if (event?.snippet) {
+                     evidenceSnippets.push(event.snippet);
+                   }
+                   // Add all quotes from all patterns
+                   trace.patterns?.forEach(p => {
+                     p.quotes?.forEach(q => {
+                       if (q.text && !evidenceSnippets.includes(q.text)) {
+                         evidenceSnippets.push(q.text);
+                       }
+                     });
+                   });
+                 }
 
                  return (
                    <ConversationTurn
@@ -174,6 +200,8 @@ const TraceDetail: React.FC<TraceDetailProps> = ({ trace, onBack, onAction }) =>
                      turnNumber={turn.turnNumber}
                      isOffending={isOffending}
                      offendingColor={catStyle?.borderColor || 'border-red-500'}
+                     evidenceSnippets={evidenceSnippets}
+                     scrollIntoView={isOffending}
                    />
                  );
                });
