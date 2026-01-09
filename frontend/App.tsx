@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Routes, Route, useNavigate, useLocation, useParams } from 'react-router-dom';
 import { Shield, Radio, Activity, LayoutDashboard, ShoppingCart, CheckCircle, AlertTriangle, Info, FileText } from 'lucide-react';
 import { CATEGORY_STYLES } from './constants';
 import { DetectionCategory, AppView, AppSettings, Trace, TraceStatus, Message, DetectionEvent } from './types';
@@ -9,6 +10,7 @@ import TraceList from './components/TraceList';
 import Settings from './components/Settings';
 import AuditView from './components/AuditView';
 import DynamicDashboard from './components/DynamicDashboard';
+import Landing from './components/Landing';
 import { AuditResult } from './lib/types';
 import { CATEGORY_TO_SKILL, AVAILABLE_SKILLS } from './lib/skillsRegistry';
 
@@ -86,64 +88,25 @@ const App: React.FC = () => {
     loadTraces();
   }, []);
 
-  // Initialize view from URL hash on mount
-  const getInitialView = (): AppView => {
-    if (typeof window === 'undefined') return 'dashboard';
-    const hash = window.location.hash;
-    const viewMap: Record<string, AppView> = {
-      '#dashboard': 'dashboard',
-      '#traces': 'traces',
-      '#processing': 'audit', // Processing tab uses 'audit' view
-      '#audit': 'audit',
-      '#settings': 'settings',
-    };
-    return viewMap[hash] || 'dashboard';
+  // Navigation hooks
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  // Derive current view from URL path
+  const getCurrentView = (): AppView => {
+    const path = location.pathname;
+    if (path === '/') return 'landing';
+    if (path === '/dashboard') return 'dashboard';
+    if (path.startsWith('/traces')) return 'traces';
+    if (path === '/queue') return 'audit';
+    if (path.startsWith('/settings')) return 'settings';
+    return 'dashboard';
   };
 
+  const currentView = getCurrentView();
+
   // Navigation State
-  const [currentView, setCurrentView] = useState<AppView>(getInitialView());
   const [selectedTrace, setSelectedTrace] = useState<Trace | null>(null);
-
-  // URL-based routing
-  useEffect(() => {
-    const handleHashChange = () => {
-      const hash = window.location.hash;
-      
-      // Handle settings section navigation (e.g., #settings/database-management)
-      if (hash.startsWith('#settings/')) {
-        const sectionId = hash.replace('#settings/', '');
-        // Settings component will handle scrolling to section
-        setCurrentView('settings');
-        return;
-      }
-      
-      // Handle main view navigation
-      const viewMap: Record<string, AppView> = {
-        '#dashboard': 'dashboard',
-        '#traces': 'traces',
-        '#processing': 'audit', // Processing tab uses 'audit' view
-        '#audit': 'audit',
-        '#settings': 'settings',
-      };
-      
-      if (hash && viewMap[hash]) {
-        const newView = viewMap[hash];
-        console.log(`[Navigation] Hash: ${hash} -> View: ${newView}`);
-        setCurrentView(newView);
-      } else if (!hash) {
-        // Default to dashboard if no hash
-        console.log('[Navigation] No hash -> View: dashboard');
-        setCurrentView('dashboard');
-      }
-    };
-
-    // Check hash on mount (in case URL already has hash)
-    handleHashChange();
-
-    // Listen for hash changes
-    window.addEventListener('hashchange', handleHashChange);
-    return () => window.removeEventListener('hashchange', handleHashChange);
-  }, []); // Empty dependency array - only run on mount
 
   // Filter State (Dashboard)
   const [activeCategories, setActiveCategories] = useState<DetectionCategory[]>(
@@ -190,18 +153,18 @@ const App: React.FC = () => {
 
   // Handlers
   const handleNavigate = (view: AppView) => {
-    setCurrentView(view);
     setSelectedTrace(null); // Clear selection when changing main views
-    
-    // Update URL hash for direct navigation
-    const hashMap: Record<AppView, string> = {
-      'dashboard': '#dashboard',
-      'traces': '#traces',
-      'audit': '#processing', // 'audit' view uses '#processing' URL for Processing tab
-      'settings': '#settings',
+
+    // Navigate using react-router
+    const routeMap: Record<AppView, string> = {
+      'landing': '/',
+      'dashboard': '/dashboard',
+      'traces': '/traces',
+      'audit': '/queue',
+      'settings': '/settings',
     };
-    if (hashMap[view]) {
-      window.history.replaceState(null, '', hashMap[view]);
+    if (routeMap[view]) {
+      navigate(routeMap[view]);
     }
   };
 
@@ -209,16 +172,18 @@ const App: React.FC = () => {
     const trace = traces.find(t => t.detectionEvent?.id === eventId);
     if (trace) {
       setSelectedTrace(trace);
-      setCurrentView('traces');
+      navigate(`/traces/${trace.id}`);
     }
   };
 
   const handleSelectTraceFromList = (trace: Trace) => {
     setSelectedTrace(trace);
+    navigate(`/traces/${trace.id}`);
   };
 
   const handleBackToTraceList = () => {
     setSelectedTrace(null);
+    navigate('/traces');
   };
 
 
@@ -578,18 +543,38 @@ const App: React.FC = () => {
     if (currentView === 'dashboard') return 'Live Monitoring Dashboard';
     if (currentView === 'traces') return selectedTrace ? `Investigation: ${selectedTrace.id}` : 'Trace History';
     if (currentView === 'audit') return 'Detection Queue';
-    return 'System Settings';
+    if (currentView === 'settings') return 'System Settings';
+    return '';
   };
+
+  // Handle URL-based trace selection for /traces/:id route
+  useEffect(() => {
+    const match = location.pathname.match(/^\/traces\/(.+)$/);
+    if (match && tracesLoaded) {
+      const traceId = match[1];
+      const trace = traces.find(t => t.id === traceId);
+      if (trace && (!selectedTrace || selectedTrace.id !== traceId)) {
+        setSelectedTrace(trace);
+      }
+    } else if (location.pathname === '/traces' && selectedTrace) {
+      setSelectedTrace(null);
+    }
+  }, [location.pathname, tracesLoaded, traces]);
+
+  // Landing page has its own full-screen layout
+  if (currentView === 'landing') {
+    return <Landing />;
+  }
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900 via-slate-950 to-black font-sans selection:bg-cyan-500/30 flex">
-      
+
       {/* Navigation Sidebar */}
       <LeftNav currentView={currentView} onNavigate={handleNavigate} />
 
       {/* Main Content Area */}
       <div className="flex-1 ml-64 relative">
-        
+
         {/* Global Header */}
         <header className="sticky top-0 z-40 glass-panel border-b border-slate-800 backdrop-blur-md">
           <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
@@ -624,8 +609,8 @@ const App: React.FC = () => {
           <div className="fixed bottom-8 left-1/2 transform -translate-x-1/2 z-50 animate-in slide-in-from-bottom-5 duration-300">
             <div className={`
               flex items-center gap-3 px-6 py-3 rounded-full shadow-lg border backdrop-blur-md
-              ${toast.type === 'alert' ? 'bg-red-900/80 border-red-700 text-white' : 
-                toast.type === 'success' ? 'bg-emerald-900/80 border-emerald-700 text-white' : 
+              ${toast.type === 'alert' ? 'bg-red-900/80 border-red-700 text-white' :
+                toast.type === 'success' ? 'bg-emerald-900/80 border-emerald-700 text-white' :
                 'bg-slate-800/90 border-slate-600 text-slate-200'}
             `}>
               {toast.type === 'alert' && <AlertTriangle size={18} />}
