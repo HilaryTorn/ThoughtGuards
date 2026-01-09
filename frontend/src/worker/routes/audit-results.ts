@@ -39,6 +39,7 @@ async function ensureTableExists(db: D1Database) {
           primary_category TEXT,
           secondary_categories TEXT,
           detection_metadata TEXT,
+          patterns TEXT,
           run_count INTEGER DEFAULT 1,
           score_mean REAL,
           score_stddev REAL,
@@ -133,6 +134,8 @@ auditResultsRoutes.get('/', async (c) => {
       primaryCategory: row.primary_category || undefined,
       secondaryCategories: row.secondary_categories ? JSON.parse(row.secondary_categories) : undefined,
       detectionMetadata: row.detection_metadata ? JSON.parse(row.detection_metadata) : undefined,
+      // Taxonomy patterns from taxonomy-auditor
+      patterns: row.patterns ? JSON.parse(row.patterns) : undefined,
       // Statistical fields
       runCount: row.run_count || 1,
       statistics: row.score_mean !== null ? {
@@ -253,6 +256,7 @@ auditResultsRoutes.post('/', async (c) => {
       primary_category,
       secondary_categories,
       detection_metadata,
+      patterns,
       run_count,
       statistics,
     } = body;
@@ -280,10 +284,10 @@ auditResultsRoutes.post('/', async (c) => {
         overall_score, confidence, status, risk_score,
         detected_types, metrics, recommendations, limitations, usage,
         detection_event, conversation_data,
-        skill_results, combined_score, primary_category, secondary_categories, detection_metadata,
+        skill_results, combined_score, primary_category, secondary_categories, detection_metadata, patterns,
         run_count, score_mean, score_stddev, score_p5, score_p50, score_p95, score_ci_lower, score_ci_upper,
         created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
       audit_id,
       trace_id,
@@ -306,6 +310,7 @@ auditResultsRoutes.post('/', async (c) => {
       primary_category || null,
       secondary_categories ? JSON.stringify(secondary_categories) : null,
       detection_metadata ? JSON.stringify(detection_metadata) : null,
+      patterns ? JSON.stringify(patterns) : null,
       run_count || 1,
       scoreMean !== undefined ? scoreMean : null,
       scoreStddev !== undefined ? scoreStddev : null,

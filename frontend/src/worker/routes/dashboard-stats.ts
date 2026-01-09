@@ -7,14 +7,14 @@ import type { Env } from '../index';
 
 export const dashboardStatsRoutes = new Hono<{ Bindings: Env }>();
 
-// Default categories to ensure all are present in byCategory
+// Default categories (HOW verbs from taxonomy)
 const DEFAULT_CATEGORIES = [
-  'Goal Reasoning',
-  'Deception Planning',
-  'Reward Hacking',
-  'Sabotage Planning',
-  'Obfuscation & Evasion',
-  'Persona Manipulation'
+  'Fabricated',      // H1
+  'Sandbagged',      // H2
+  'Context-Switched', // H3
+  'Pressured',       // H4
+  'Hid',             // H5
+  'Overclaimed'      // H6
 ];
 
 dashboardStatsRoutes.get('/', async (c) => {
@@ -27,10 +27,10 @@ dashboardStatsRoutes.get('/', async (c) => {
     ).first<{ count: number }>();
     const totalAnalyzed = auditsResult?.count || 0;
 
-    // Get total detections (audits with high score or flagged status)
+    // Get total detections (audits with high score)
     const detectionsResult = await db.prepare(`
       SELECT COUNT(*) as count FROM audit_results
-      WHERE overall_score >= 0.5 OR status = 'flagged'
+      WHERE overall_score >= 0.5
     `).first<{ count: number }>();
     const totalDetections = detectionsResult?.count || 0;
 
@@ -39,7 +39,7 @@ dashboardStatsRoutes.get('/', async (c) => {
       SELECT
         primary_category,
         COUNT(*) as count,
-        SUM(CASE WHEN overall_score >= 0.5 OR status = 'flagged' THEN 1 ELSE 0 END) as detections,
+        SUM(CASE WHEN overall_score >= 0.5 THEN 1 ELSE 0 END) as detections,
         AVG(overall_score) as mean_score,
         AVG(overall_score * overall_score) as mean_sq_score
       FROM audit_results
@@ -91,7 +91,7 @@ dashboardStatsRoutes.get('/', async (c) => {
       SELECT
         DATE(created_at) as date,
         COUNT(*) as count,
-        SUM(CASE WHEN overall_score >= 0.5 OR status = 'flagged' THEN 1 ELSE 0 END) as detections
+        SUM(CASE WHEN overall_score >= 0.5 THEN 1 ELSE 0 END) as detections
       FROM audit_results
       WHERE created_at >= ?
       GROUP BY DATE(created_at)
@@ -109,7 +109,7 @@ dashboardStatsRoutes.get('/', async (c) => {
       SELECT
         model_name,
         COUNT(*) as total,
-        SUM(CASE WHEN overall_score >= 0.5 OR status = 'flagged' THEN 1 ELSE 0 END) as detections,
+        SUM(CASE WHEN overall_score >= 0.5 THEN 1 ELSE 0 END) as detections,
         AVG(overall_score) as mean_score,
         AVG(overall_score * overall_score) as mean_sq_score
       FROM audit_results
@@ -132,14 +132,14 @@ dashboardStatsRoutes.get('/', async (c) => {
       }
     }
 
-    // Get risk score distribution
+    // Get risk score distribution (overall_score is 0-1, convert to 0-100 scale)
     const riskDistResult = await db.prepare(`
       SELECT
         CASE
-          WHEN risk_score < 20 THEN '0-20'
-          WHEN risk_score < 40 THEN '20-40'
-          WHEN risk_score < 60 THEN '40-60'
-          WHEN risk_score < 80 THEN '60-80'
+          WHEN overall_score < 0.2 THEN '0-20'
+          WHEN overall_score < 0.4 THEN '20-40'
+          WHEN overall_score < 0.6 THEN '40-60'
+          WHEN overall_score < 0.8 THEN '60-80'
           ELSE '80-100'
         END as bucket,
         COUNT(*) as count
@@ -164,6 +164,28 @@ dashboardStatsRoutes.get('/', async (c) => {
     });
   } catch (error: any) {
     console.error('Dashboard stats error:', error);
+
+    // If table doesn't exist, return empty stats instead of error
+    if (error.message?.includes('no such table')) {
+      const byCategory: Record<string, any> = {};
+      for (const cat of DEFAULT_CATEGORIES) {
+        byCategory[cat] = {
+          count: 0,
+          detections: 0,
+          statistics: { mean: 0, stddev: 0, quantiles: { p5: 0, p50: 0, p95: 0 } }
+        };
+      }
+      return c.json({
+        totalAnalyzed: 0,
+        totalDetections: 0,
+        byCategory,
+        timeSeries: [],
+        modelPerformance: {},
+        riskScoreDistribution: {},
+        message: 'No audit results yet. Run audits from the Queue tab to populate the dashboard.'
+      });
+    }
+
     return c.json({ error: error.message || 'Failed to fetch dashboard stats' }, 500);
   }
 });

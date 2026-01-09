@@ -1,5 +1,4 @@
 import React from 'react';
-import { Shield, ArrowRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 const Landing: React.FC = () => {
@@ -10,9 +9,11 @@ const Landing: React.FC = () => {
       <div className="max-w-2xl mx-auto text-center px-6">
         {/* Logo */}
         <div className="flex justify-center mb-8">
-          <div className="bg-gradient-to-tr from-cyan-500 to-blue-600 p-4 rounded-2xl shadow-[0_0_30px_rgba(6,182,212,0.4)]">
-            <Shield className="text-white w-12 h-12" />
-          </div>
+          <img
+            src="/thought-guards-logo.png"
+            alt="Thought Guards"
+            className="w-24 h-24 object-contain rounded-2xl"
+          />
         </div>
 
         {/* Title */}
@@ -34,10 +35,9 @@ const Landing: React.FC = () => {
         {/* CTA Button */}
         <button
           onClick={() => navigate('/dashboard')}
-          className="inline-flex items-center gap-3 px-8 py-4 bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-semibold rounded-xl shadow-lg shadow-cyan-500/25 hover:shadow-cyan-500/40 transition-all duration-300 hover:scale-105"
+          className="inline-flex items-center gap-2 px-4 py-2 bg-cyan-500/20 text-cyan-400 border border-cyan-500/50 rounded-lg hover:bg-cyan-500/30 transition-colors"
         >
-          Go to Dashboard
-          <ArrowRight size={20} />
+          Go to Dashboard →
         </button>
       </div>
 

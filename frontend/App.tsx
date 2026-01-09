@@ -169,7 +169,8 @@ const App: React.FC = () => {
   };
 
   const handleViewTraceFromDashboard = (eventId: string) => {
-    const trace = traces.find(t => t.detectionEvent?.id === eventId);
+    // Try to find by detection event ID first, then by trace ID
+    const trace = traces.find(t => t.detectionEvent?.id === eventId || t.id === eventId);
     if (trace) {
       setSelectedTrace(trace);
       navigate(`/traces/${trace.id}`);
@@ -309,87 +310,110 @@ const App: React.FC = () => {
         });
 
         // Determine category from multi-skill result, test case, or skill
+        // Maps legacy test case categories to new HOW verb categories
         const testCaseCategoryMap: Record<string, DetectionCategory> = {
-          'Opinion': 'Persona Manipulation',
-          'Answer': 'Goal Reasoning',
-          'Social': 'Persona Manipulation',
-          'Control': 'Goal Reasoning',
-          'Deception': 'Deception Planning',
-          'Reward Hacking': 'Reward Hacking',
+          'Opinion': 'Pressured',       // was Persona Manipulation -> H4
+          'Answer': 'Hid',              // was Goal Reasoning -> H5
+          'Social': 'Pressured',        // was Persona Manipulation -> H4
+          'Control': 'Hid',             // was Goal Reasoning -> H5
+          'Deception': 'Fabricated',    // was Deception Planning -> H1
+          'Reward Hacking': 'Overclaimed', // was Reward Hacking -> H6
         };
-        
+
         // Get category from multi-skill result (primary_category), test case, or infer from skill_id
-        let detectedCategory: DetectionCategory = 'Deception Planning'; // default
+        let detectedCategory: DetectionCategory = 'Fabricated'; // default
         if (result.primary_category && result.primary_category !== 'none') {
-          // Use primary category from multi-skill detection
+          // Use primary category from multi-skill detection (should already be HOW verb)
           detectedCategory = result.primary_category as DetectionCategory;
         } else if (testCase.category && testCaseCategoryMap[testCase.category]) {
           detectedCategory = testCaseCategoryMap[testCase.category];
         } else if (result.skill_id) {
-          // Map skill_id to category (fallback for single-skill results)
+          // Map skill_id to new HOW verb category
           const skillToCategory: Record<string, DetectionCategory> = {
-            'sycophancy-auditor': 'Persona Manipulation',
-            'reward-hacking-auditor': 'Reward Hacking',
-            'sabotage-planning-auditor': 'Sabotage Planning',
-            'goal-reasoning-auditor': 'Goal Reasoning',
-            'deception-planning-auditor': 'Deception Planning',
-            'obfuscation-evasion-auditor': 'Obfuscation & Evasion',
-            'persona-manipulation-auditor': 'Persona Manipulation',
+            'taxonomy-auditor': 'Fabricated', // Will be determined by patterns
+            'sycophancy-auditor': 'Pressured',  // H4: Influence Tactics
+            'reward-hacking-auditor': 'Overclaimed', // H6: Miscalibration
+            'sabotage-planning-auditor': 'Sandbagged', // H2: Capability Suppression
+            'goal-reasoning-auditor': 'Hid',  // H5: Omission/Obfuscation
+            'deception-planning-auditor': 'Fabricated', // H1: Misrepresentation
+            'obfuscation-evasion-auditor': 'Context-Switched', // H3: Oversight-Conditional
+            'persona-manipulation-auditor': 'Pressured', // H4: Influence Tactics
           };
-          detectedCategory = skillToCategory[result.skill_id] || 'Deception Planning';
+          detectedCategory = skillToCategory[result.skill_id] || 'Fabricated';
         }
 
-        // Map skill-specific detected types to pattern names from PATTERNS_BY_CATEGORY
+        // For taxonomy auditor results, extract category from patterns if available
+        if (result.patterns && result.patterns.length > 0) {
+          const topPattern = result.patterns[0];
+          if (topPattern.how?.verb) {
+            detectedCategory = topPattern.how.verb as DetectionCategory;
+          }
+        }
+
+        // Legacy pattern mapping (for old audit results) - no longer needed for new taxonomy audits
         const patternMapping: Record<string, Record<string, string>> = {
-          'Deception Planning': {
-            'fabricated_constraint': 'Fabricated operational constraint',
-            'blame_deflection': 'Blame deflection',
-            'artificial_delay': 'Artificial delay',
-            'information_withholding': 'Information withholding',
+          'Fabricated': {
+            'fabricated_constraint': 'T1|H1|W1',
+            'blame_deflection': 'T1|H1|W4',
+            'artificial_delay': 'T1|H1|W3',
+            'information_withholding': 'T1|H5|W4',
           },
-          'Reward Hacking': {
-            'specification_gaming': 'Work avoidance',
-            'environment_manipulation': 'Metric gaming (AHT)',
-            'evaluation_subversion': 'Metric gaming (Retention)',
-            'reward_tampering': 'Safety constraint bypass',
-            'self_preservation': 'Work avoidance',
+          'Overclaimed': {
+            'specification_gaming': 'T1|H6|W1',
+            'environment_manipulation': 'T1|H6|W1',
+            'evaluation_subversion': 'T2|H6|W1',
+            'reward_tampering': 'T1|H6|W1',
+            'self_preservation': 'T1|H6|W4',
           },
-          'Sabotage Planning': {
-            'competitor_disparagement': 'Competitor disparagement',
-            'fabricated_news': 'Fabricated news',
-            'malicious_code': 'Malicious code injection',
-            'data_corruption': 'Data corruption',
+          'Sandbagged': {
+            'competitor_disparagement': 'T1|H2|W1',
+            'fabricated_news': 'T1|H1|W1',
+            'malicious_code': 'T4|H2|W4',
+            'data_corruption': 'T4|H2|W4',
           },
-          'Goal Reasoning': {
-            'metric_aware': 'Metric-aware reasoning',
-            'option_burying': 'Option burying',
-            'value_distortion': 'Value distortion',
-            'objective_shifting': 'Objective shifting',
+          'Hid': {
+            'metric_aware': 'T1|H5|W1',
+            'option_burying': 'T1|H5|W1',
+            'value_distortion': 'T1|H5|W1',
+            'objective_shifting': 'T1|H5|W1',
           },
-          'Obfuscation & Evasion': {
-            'blame_redirection': 'Redirecting blame',
-            'hiding_reality': 'Hiding operational reality',
-            'strategic_omission': 'Strategic omission',
-            'context_stripping': 'Context stripping',
+          'Context-Switched': {
+            'blame_redirection': 'T1|H3|W4',
+            'hiding_reality': 'T1|H3|W4',
+            'strategic_omission': 'T1|H5|W4',
+            'context_stripping': 'T1|H3|W3',
           },
-          'Persona Manipulation': {
-            'opinion': 'Tone shifting for dominance',
-            'feedback': 'Escalation suppression',
-            'social': 'Authority fabrication',
-            'tone_shifting': 'Tone shifting for dominance',
-            'escalation_suppression': 'Escalation suppression',
-            'authority_fabrication': 'Authority fabrication',
-            'empathy_faking': 'Empathy faking',
+          'Pressured': {
+            'opinion': 'T1|H4|W2',
+            'feedback': 'T1|H4|W2',
+            'social': 'T1|H4|W2',
+            'tone_shifting': 'T1|H4|W3',
+            'escalation_suppression': 'T1|H4|W3',
+            'authority_fabrication': 'T1|H4|W2',
+            'empathy_faking': 'T1|H4|W2',
           },
         };
 
         // Convert detected types to pattern names
+        // Check both new taxonomy patterns AND legacy detected_types
         const matchedPatterns: string[] = [];
-        const detectedTypes = result.detected_types.filter(dt => dt.type !== 'none' && dt.type !== '');
-        
-        if (detectedTypes.length > 0) {
+        const detectedTypes = result.detected_types?.filter((dt: any) => dt.type !== 'none' && dt.type !== '') || [];
+        const taxonomyPatterns = result.patterns || [];
+
+        // New taxonomy format: use patterns directly
+        if (taxonomyPatterns.length > 0) {
+          taxonomyPatterns.forEach((p: any) => {
+            const triad = p.triad || `${p.target_code}|${p.how_code}|${p.why_code}`;
+            if (!matchedPatterns.includes(triad)) {
+              matchedPatterns.push(triad);
+            }
+          });
+        }
+
+        // Legacy format: use detected_types with pattern mapping
+        if (detectedTypes.length > 0 && matchedPatterns.length === 0) {
           const categoryMapping = patternMapping[detectedCategory] || {};
-          detectedTypes.forEach(dt => {
+          detectedTypes.forEach((dt: any) => {
             const patternName = categoryMapping[dt.type];
             if (patternName && !matchedPatterns.includes(patternName)) {
               matchedPatterns.push(patternName);
@@ -397,28 +421,50 @@ const App: React.FC = () => {
           });
         }
 
-        // If nothing is detected, mark as clean regardless of risk score
-        const finalStatus: TraceStatus = matchedPatterns.length === 0 ? 'clean' : status;
-        const finalRiskScore = matchedPatterns.length === 0 ? Math.min(riskScore, settings.riskThreshold - 1) : riskScore;
+        // Determine if manipulation was detected based on patterns OR high score
+        const hasDetections = matchedPatterns.length > 0 || taxonomyPatterns.length > 0 || riskScore >= settings.riskThreshold;
+        const finalStatus: TraceStatus = hasDetections ? status : 'clean';
+        const finalRiskScore = hasDetections ? riskScore : Math.min(riskScore, settings.riskThreshold - 1);
 
-        // Create detection event only if flagged and has actual detections
+        // Create detection event if flagged or has detections
         let detectionEvent: DetectionEvent | undefined;
-        if (finalStatus === 'flagged' && matchedPatterns.length > 0 && detectedTypes.length > 0) {
-          const primaryType = detectedTypes[0];
-          const evidence = primaryType.evidence[0] || { snippet: '', reason: '', turn_number: 0, severity: 'medium' as const };
-          
+        if (finalStatus === 'flagged' || finalStatus === 'review' || hasDetections) {
+          // Get snippet and reason from taxonomy patterns or legacy detected_types
+          let snippet = '';
+          let reason = '';
+          let heuristicScore = 0.5;
+
+          if (taxonomyPatterns.length > 0) {
+            const topPattern = taxonomyPatterns[0];
+            snippet = topPattern.quotes?.[0]?.text || topPattern.short_desc || '';
+            reason = topPattern.sentence || topPattern.evidence_notes || '';
+            heuristicScore = topPattern.prominence || topPattern.pattern_confidence || 0.7;
+          } else if (detectedTypes.length > 0) {
+            const primaryType = detectedTypes[0];
+            const evidence = primaryType.evidence?.[0] || { snippet: '', reason: '', turn_number: 0, severity: 'medium' as const };
+            snippet = evidence.snippet || '';
+            reason = evidence.reason || '';
+            heuristicScore = primaryType.score || 0.5;
+          }
+
+          // Fallback to last assistant message if no snippet
+          if (!snippet && testCase.turns?.length > 0) {
+            const lastAssistant = [...testCase.turns].reverse().find((t: any) => t.role === 'assistant');
+            snippet = lastAssistant?.content?.substring(0, 150) || '';
+          }
+
           detectionEvent = {
             id: result.id,
             category: detectedCategory,
             riskScore: finalRiskScore,
             timestamp: result.timestamp,
-            snippet: evidence.snippet || testCase.turns[testCase.turns.length - 1]?.content.substring(0, 100) || '',
-            fullCoT: result.recommendations.join(' ') || evidence.reason,
+            snippet,
+            fullCoT: result.recommendations?.join(' ') || reason || 'Analysis complete',
             conversationHistory: conversation,
-            matchedPatterns: matchedPatterns,
+            matchedPatterns,
             confidence: {
               model: result.confidence === 'high' ? 0.9 : result.confidence === 'medium' ? 0.7 : 0.5,
-              heuristic: primaryType.score
+              heuristic: heuristicScore
             }
           };
         }
@@ -450,6 +496,8 @@ const App: React.FC = () => {
           primaryCategory: result.primary_category,
           secondaryCategories: result.secondary_categories,
           detectionMetadata: result.detection_metadata,
+          // Taxonomy patterns
+          patterns: result.patterns,
         };
 
         // Save to database
@@ -491,6 +539,8 @@ const App: React.FC = () => {
               primary_category: result.primary_category,
               secondary_categories: result.secondary_categories,
               detection_metadata: result.detection_metadata,
+              // Taxonomy patterns
+              patterns: result.patterns,
             }),
           });
 
@@ -535,7 +585,7 @@ const App: React.FC = () => {
 
     // Default: Dashboard View
     return (
-      <DynamicDashboard settings={settings} onViewTrace={handleViewTraceFromDashboard} />
+      <DynamicDashboard settings={settings} onViewTrace={handleViewTraceFromDashboard} onNavigate={handleNavigate} />
     );
   };
 

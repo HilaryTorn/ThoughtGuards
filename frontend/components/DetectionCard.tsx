@@ -1,7 +1,18 @@
 import React, { useState } from 'react';
-import { ChevronDown, ChevronUp, MessageSquare, ExternalLink, BrainCircuit, Target, VenetianMask, Gift, Bomb, CloudFog, Tent, LucideIcon, Check, Minus } from 'lucide-react';
-import { DetectionEvent } from '../types';
-import { CATEGORY_STYLES, PATTERNS_BY_CATEGORY } from '../constants';
+import { ChevronDown, ChevronUp, MessageSquare, ExternalLink, BrainCircuit, Target, VenetianMask, Gift, Bomb, CloudFog, Tent, LucideIcon, Check, Minus, Crosshair, Cog, Users } from 'lucide-react';
+import { DetectionEvent, DetectionCategory, WHYCode, HOWCode, TARGETCode } from '../types';
+import { CATEGORY_STYLES, WHY_VERBS, HOW_VERBS, TARGET_VERBS, LEGACY_CATEGORY_MAP } from '../constants';
+
+// Helper to normalize legacy category names to new HOW verbs
+function normalizeCategory(category: string): DetectionCategory {
+  if (CATEGORY_STYLES[category as DetectionCategory]) {
+    return category as DetectionCategory;
+  }
+  if (LEGACY_CATEGORY_MAP[category]) {
+    return LEGACY_CATEGORY_MAP[category];
+  }
+  return 'Fabricated';
+}
 
 const Icons: Record<string, LucideIcon> = {
   Target,
@@ -19,14 +30,16 @@ interface DetectionCardProps {
 
 const DetectionCard: React.FC<DetectionCardProps> = ({ event, onViewTrace }) => {
   const [isExpanded, setIsExpanded] = useState(false);
-  const style = CATEGORY_STYLES[event.category];
-  
-  // If category doesn't exist in CATEGORY_STYLES, return null or use default
+  // Normalize legacy category names to new HOW verbs
+  const normalizedCategory = normalizeCategory(event.category);
+  const style = CATEGORY_STYLES[normalizedCategory];
+
+  // Safety check (should always have style now with normalization)
   if (!style) {
     console.warn(`Unknown category: ${event.category}`);
     return null;
   }
-  
+
   const Icon = Icons[style.icon];
 
   // Helper to highlight specific snippets in full text
@@ -48,16 +61,13 @@ const DetectionCard: React.FC<DetectionCardProps> = ({ event, onViewTrace }) => 
       return text;
   };
 
-  // Get available patterns for this category
-  const allPatterns = PATTERNS_BY_CATEGORY[event.category];
-  // Sort patterns: matched first, then others
-  const sortedPatterns = [...allPatterns].sort((a, b) => {
-    const aMatched = event.matchedPatterns.includes(a);
-    const bMatched = event.matchedPatterns.includes(b);
-    if (aMatched && !bMatched) return -1;
-    if (!aMatched && bMatched) return 1;
-    return 0;
-  });
+  // Parse triad from matched patterns (e.g., "T1|H1|W1")
+  const triadPattern = event.matchedPatterns.find(p => /^T[1-4]\|H[1-6]\|W[1-4]$/.test(p));
+  let parsedTriad: { target: TARGETCode; how: HOWCode; why: WHYCode } | null = null;
+  if (triadPattern) {
+    const [targetCode, howCode, whyCode] = triadPattern.split('|') as [TARGETCode, HOWCode, WHYCode];
+    parsedTriad = { target: targetCode, how: howCode, why: whyCode };
+  }
 
   return (
     <div className={`glass-panel rounded-xl mb-4 overflow-hidden transition-all duration-300 ${isExpanded ? 'border-slate-600 shadow-lg shadow-black/40' : 'border-slate-800'}`}>
@@ -164,34 +174,57 @@ const DetectionCard: React.FC<DetectionCardProps> = ({ event, onViewTrace }) => 
 
             </div>
 
-            {/* Right Col: Analysis */}
+            {/* Right Col: Taxonomy Analysis */}
             <div className="space-y-4">
               <div className="glass-panel p-4 rounded-lg border border-slate-700/50">
                  <h4 className="text-xs uppercase tracking-wider text-slate-500 font-semibold mb-3 flex items-center gap-2">
                    <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
-                   Detection Logic: {style.label.toUpperCase()}
+                   Detection Analysis
                  </h4>
-                 
-                 <div className="space-y-3">
-                   {/* Patterns List */}
-                   {sortedPatterns.map((pattern, idx) => {
-                     const isMatched = event.matchedPatterns.includes(pattern);
-                     // Only show first 3 items in the card view to keep it compact, unless matched
-                     if (!isMatched && idx > 2) return null;
 
-                     return (
-                        <div key={pattern} className="flex items-start gap-3">
-                          <div className={`mt-0.5 ${isMatched ? 'text-green-400' : 'text-slate-600'}`}>
-                            {isMatched ? <Check size={16} strokeWidth={3} /> : <Minus size={16} />}
-                          </div>
-                          <div>
-                             <p className={`text-sm ${isMatched ? 'text-slate-200 font-medium' : 'text-slate-500'}`}>
-                               {pattern}
-                             </p>
-                          </div>
-                        </div>
-                     );
-                   })}
+                 <div className="space-y-3">
+                   {parsedTriad ? (
+                     <>
+                       {/* HOW */}
+                       <div className="flex items-center gap-2">
+                         <Cog size={14} className={style.color} />
+                         <span className="text-xs text-slate-500 font-mono">{parsedTriad.how}</span>
+                         <span className={`text-sm font-medium ${style.color}`}>
+                           {HOW_VERBS[parsedTriad.how]?.verb}
+                         </span>
+                       </div>
+                       {/* WHY */}
+                       <div className="flex items-center gap-2">
+                         <Crosshair size={14} className="text-amber-400" />
+                         <span className="text-xs text-slate-500 font-mono">{parsedTriad.why}</span>
+                         <span className="text-sm font-medium text-amber-400">
+                           {WHY_VERBS[parsedTriad.why]?.verb}
+                         </span>
+                       </div>
+                       {/* TARGET */}
+                       <div className="flex items-center gap-2">
+                         <Users size={14} className="text-cyan-400" />
+                         <span className="text-xs text-slate-500 font-mono">{parsedTriad.target}</span>
+                         <span className="text-sm font-medium text-cyan-400">
+                           {TARGET_VERBS[parsedTriad.target]?.verb}
+                         </span>
+                       </div>
+                       {/* Triad Code */}
+                       <div className="mt-2 pt-2 border-t border-slate-800">
+                         <span className="px-2 py-1 bg-slate-800 rounded text-xs font-mono text-slate-400">
+                           {triadPattern}
+                         </span>
+                       </div>
+                     </>
+                   ) : (
+                     /* Fallback for legacy patterns */
+                     <div className="flex items-center gap-2">
+                       <div className={`p-1 rounded ${style.bgColor}`}>
+                         {Icon && <Icon size={14} className={style.color} />}
+                       </div>
+                       <span className={`text-sm font-medium ${style.color}`}>{style.label}</span>
+                     </div>
+                   )}
                  </div>
               </div>
             </div>
