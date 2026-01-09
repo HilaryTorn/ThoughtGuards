@@ -1,7 +1,21 @@
-import React, { useState } from 'react';
-import { ArrowLeft, CheckCircle, AlertTriangle, XCircle, MessageSquare, BrainCircuit, Target, VenetianMask, Gift, Bomb, CloudFog, Tent, LucideIcon, Check, Minus, ChevronDown, ChevronRight } from 'lucide-react';
-import { Trace, Message, DetectionCategory } from '../types';
-import { CATEGORY_STYLES, PATTERNS_BY_CATEGORY } from '../constants';
+import React from 'react';
+import { ArrowLeft, CheckCircle, AlertTriangle, XCircle, MessageSquare, AlertCircle } from 'lucide-react';
+import { Trace, Message, DetectionCategory, HOWCode, WHYCode, TARGETCode } from '../types';
+import { CATEGORY_STYLES, LEGACY_CATEGORY_MAP, HOW_VERBS, WHY_VERBS, TARGET_VERBS } from '../constants';
+import DetectedIssuesPanel from './DetectedIssuesPanel';
+import ConversationTurn from './ConversationTurn';
+import InfoTooltip from './InfoTooltip';
+
+// Helper to normalize legacy category names to new HOW verbs
+function normalizeCategory(category: string): DetectionCategory {
+  if (CATEGORY_STYLES[category as DetectionCategory]) {
+    return category as DetectionCategory;
+  }
+  if (LEGACY_CATEGORY_MAP[category]) {
+    return LEGACY_CATEGORY_MAP[category];
+  }
+  return 'Fabricated';
+}
 
 interface TraceDetailProps {
   trace: Trace | null;
@@ -9,77 +23,27 @@ interface TraceDetailProps {
   onAction: (id: string, action: 'confirm' | 'review' | 'false_positive') => void;
 }
 
-const Icons: Record<string, LucideIcon> = {
-  Target,
-  VenetianMask,
-  Gift,
-  Bomb,
-  CloudFog,
-  Tent
-};
-
 const TraceDetail: React.FC<TraceDetailProps> = ({ trace, onBack, onAction }) => {
-  const [showOtherCategories, setShowOtherCategories] = useState(false);
-
   if (!trace) return null;
 
   const event = trace.detectionEvent;
   // Show analysis panel for flagged, review, confirmed, reviewed, and false_positive statuses
   const isFlagged = trace.status === 'flagged' || trace.status === 'confirmed' || trace.status === 'reviewed' || trace.status === 'false_positive' || trace.status === 'review';
-  const catStyle = event ? CATEGORY_STYLES[event.category] : null;
+  // Normalize legacy category names to new HOW verbs
+  const normalizedCategory = event ? normalizeCategory(event.category) : null;
+  const catStyle = normalizedCategory ? CATEGORY_STYLES[normalizedCategory] : null;
 
-  // Mock conversation padding for cleaner look if history is short
-  const displayConversation: Message[] = trace.conversation.length < 5
-    ? [
-        { role: 'user', content: "Hello", timestamp: "Start" },
-        { role: 'assistant', content: "Hi there!", timestamp: "Start" },
-        ...trace.conversation
-      ]
-    : trace.conversation;
+  // Use actual conversation without mock padding
+  const displayConversation: Message[] = trace.conversation;
 
-  const renderStatusBadge = () => {
-    if (trace.status === 'confirmed') {
-      return (
-        <span className="flex items-center gap-1.5 px-2 py-0.5 rounded text-xs border border-amber-500/50 bg-amber-500/20 text-amber-200 font-bold uppercase tracking-wide">
-          <AlertTriangle size={12} /> Confirmed Manipulation
-        </span>
-      );
-    }
-    if (trace.status === 'reviewed') {
-      return (
-        <span className="flex items-center gap-1.5 px-2 py-0.5 rounded text-xs border border-emerald-500/50 bg-emerald-500/20 text-emerald-200 font-bold uppercase tracking-wide">
-          <CheckCircle size={12} /> Reviewed
-        </span>
-      );
-    }
-    if (trace.status === 'false_positive') {
-      return (
-        <span className="flex items-center gap-1.5 px-2 py-0.5 rounded text-xs border border-slate-500/50 bg-slate-500/20 text-slate-300 font-bold uppercase tracking-wide">
-          <XCircle size={12} /> False Positive
-        </span>
-      );
-    }
-    // Default Flagged State (show Category)
-    if (catStyle) {
-      return (
-        <span className={`px-2 py-0.5 rounded text-xs border ${catStyle.borderColor} ${catStyle.bgColor} ${catStyle.color}`}>
-          {catStyle.label}
-        </span>
-      );
-    }
-    // Clean
-    return (
-      <span className="px-2 py-0.5 rounded text-xs border border-emerald-500/30 bg-emerald-500/10 text-emerald-400">
-        Clean Trace
-      </span>
-    );
-  };
+  // Shorten trace ID for display (show last 8 chars if it's a long ID)
+  const shortTraceId = trace.id.length > 12 ? `...${trace.id.slice(-8)}` : trace.id;
 
   return (
     <div className="h-[calc(100vh-8rem)] flex flex-col">
       {/* Detail Header */}
       <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
           <button
             onClick={onBack}
             className="p-2 hover:bg-slate-800 rounded-full text-slate-400 hover:text-white transition-colors"
@@ -87,63 +51,59 @@ const TraceDetail: React.FC<TraceDetailProps> = ({ trace, onBack, onAction }) =>
             <ArrowLeft size={20} />
           </button>
           <div>
-            <h2 className="text-xl font-bold text-slate-100 flex items-center gap-3">
-              Trace #{trace.id}
-              {renderStatusBadge()}
+            <h2 className="text-lg font-bold text-slate-100">
+              Trace {shortTraceId}
             </h2>
-            <p className="text-xs text-slate-500 mt-1 font-mono">Timestamp: {trace.timestamp} • Risk Score: {trace.riskScore}</p>
+            <p className="text-xs text-slate-500 font-mono">{trace.timestamp} • Risk: {trace.riskScore}%</p>
           </div>
         </div>
 
         {/* Actions Toolbar */}
-        <div className="flex gap-3">
+        <div className="flex gap-2">
           {isFlagged && (
             <>
-              {/* False Positive Button */}
               <button
                 onClick={() => onAction(trace.id, 'false_positive')}
                 disabled={trace.status === 'false_positive'}
                 className={`
-                  flex items-center gap-2 px-3 py-2 rounded text-sm font-medium transition-colors border
+                  flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium transition-colors border whitespace-nowrap
                   ${trace.status === 'false_positive'
                     ? 'bg-slate-800/50 text-slate-500 border-slate-800 cursor-not-allowed'
                     : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'}
                 `}
               >
-                 <XCircle size={14} />
-                 {trace.status === 'false_positive' ? 'False Positive ✓' : 'False Positive'}
+                 <XCircle size={12} />
+                 False Positive
               </button>
 
-              {/* Confirm Manipulation Button */}
               <button
                 onClick={() => onAction(trace.id, 'confirm')}
                 disabled={trace.status === 'confirmed'}
                 className={`
-                  flex items-center gap-2 px-3 py-2 rounded text-sm font-medium transition-colors border shadow-[0_0_15px_rgba(245,158,11,0.05)]
+                  flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium transition-colors border whitespace-nowrap
                   ${trace.status === 'confirmed'
                     ? 'bg-amber-900/20 text-amber-500/50 border-amber-900/20 cursor-not-allowed'
                     : 'bg-amber-900/30 hover:bg-amber-900/50 text-amber-300 border-amber-800'}
                 `}
               >
-                 <AlertTriangle size={14} />
-                 {trace.status === 'confirmed' ? 'Confirmed ✓' : 'Confirm Manipulation'}
+                 <AlertTriangle size={12} />
+                 Confirm
               </button>
             </>
           )}
 
-          {/* Review Button */}
           <button
             onClick={() => onAction(trace.id, 'review')}
             disabled={trace.status === 'reviewed'}
             className={`
-              flex items-center gap-2 px-3 py-2 rounded text-sm font-medium transition-colors border
+              flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium transition-colors border whitespace-nowrap
               ${trace.status === 'reviewed'
                 ? 'bg-emerald-900/20 text-emerald-500/50 border-emerald-900/20 cursor-not-allowed'
                 : 'bg-cyan-900/30 hover:bg-cyan-900/50 text-cyan-300 border-cyan-800'}
             `}
           >
-             <CheckCircle size={14} />
-             {trace.status === 'reviewed' ? 'Reviewed ✓' : 'Mark Reviewed'}
+             <CheckCircle size={12} />
+             {trace.status === 'reviewed' ? 'Reviewed' : 'Review'}
           </button>
         </div>
       </div>
@@ -155,124 +115,215 @@ const TraceDetail: React.FC<TraceDetailProps> = ({ trace, onBack, onAction }) =>
           flex flex-col glass-panel rounded-xl border-slate-800 overflow-hidden h-full
           ${isFlagged && event ? 'col-span-5' : 'col-span-8 col-start-3'}
         `}>
-          <div className="p-4 border-b border-slate-800 bg-slate-900/50">
-            <h3 className="font-semibold text-slate-300 flex items-center gap-2">
-              <MessageSquare size={16} className="text-cyan-500" />
-              Full Conversation Thread
+          <div className="p-3 border-b border-slate-800 bg-slate-900/50">
+            <h3 className="font-semibold text-slate-300 flex items-center gap-2 text-sm">
+              <MessageSquare size={14} className="text-cyan-500" />
+              Conversation
             </h3>
           </div>
-          <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-950/30">
-             {displayConversation.map((msg, idx) => {
-               // Highlight the last interaction as the trigger if flagged
-               const isTrigger = isFlagged && idx >= displayConversation.length - 2;
-               return (
-                 <div key={idx} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
-                   <div className={`
-                      max-w-[85%] px-4 py-3 rounded-2xl text-sm relative group
-                      ${msg.role === 'user'
-                        ? 'bg-slate-800 text-slate-200 rounded-tr-sm'
-                        : 'bg-gradient-to-br from-slate-900 to-slate-900 border border-slate-800 text-slate-300 rounded-tl-sm'
-                      }
-                      ${isTrigger && msg.role === 'assistant' && catStyle ? `ring-1 ring-offset-2 ring-offset-slate-950 ${catStyle.borderColor.replace('border-', 'ring-')}` : ''}
-                   `}>
-                     <p>{msg.content}</p>
-                     <span className="text-[10px] text-slate-500 mt-1 block opacity-0 group-hover:opacity-100 transition-opacity">
-                       {msg.timestamp || '10:05 AM'}
-                     </span>
-                   </div>
-                   <span className="text-[10px] text-slate-600 mt-1 px-1 uppercase tracking-wide font-bold">
-                     {msg.role}
-                   </span>
-                 </div>
+          <div className="flex-1 overflow-y-auto p-3 space-y-3 bg-slate-950/30">
+             {(() => {
+               // Group messages into turns (user + assistant pairs)
+               const turns: Array<{ user: Message | null; assistant: Message | null; turnNumber: number }> = [];
+               let currentTurn: { user: Message | null; assistant: Message | null } = { user: null, assistant: null };
+               let turnNumber = 0;
+
+               displayConversation.forEach((msg, idx) => {
+                 if (msg.role === 'user') {
+                   // If we have a pending turn, push it
+                   if (currentTurn.user || currentTurn.assistant) {
+                     turnNumber++;
+                     turns.push({ ...currentTurn, turnNumber });
+                   }
+                   currentTurn = { user: msg, assistant: null };
+                 } else if (msg.role === 'assistant') {
+                   currentTurn.assistant = msg;
+                   turnNumber++;
+                   turns.push({ ...currentTurn, turnNumber });
+                   currentTurn = { user: null, assistant: null };
+                 }
+               });
+
+               // Push any remaining turn
+               if (currentTurn.user || currentTurn.assistant) {
+                 turnNumber++;
+                 turns.push({ ...currentTurn, turnNumber });
+               }
+
+               // Check if we have patterns with valid message indices
+               const hasValidPatternQuotes = trace.patterns?.some(p =>
+                 p.quotes?.some(q => typeof q.message_index === 'number')
                );
-             })}
+
+               return turns.map((turn, idx) => {
+                 // Determine if this turn is offending
+                 const turnMsgIndices: number[] = [];
+                 displayConversation.forEach((msg, msgIdx) => {
+                   if (msg === turn.user || msg === turn.assistant) {
+                     turnMsgIndices.push(msgIdx);
+                   }
+                 });
+
+                 // Flag turns that have issues:
+                 // 1. If patterns have quotes with message_index, flag turns that match
+                 // 2. If no valid pattern quotes, fallback to last turn only
+                 const matchesPattern = trace.patterns?.some(p =>
+                   p.quotes?.some(q => turnMsgIndices.includes(q.message_index))
+                 );
+
+                 const isLastTurnFallback = !hasValidPatternQuotes && idx === turns.length - 1;
+
+                 const isOffending = isFlagged && (matchesPattern || isLastTurnFallback);
+
+                 // Collect ALL evidence snippets for highlighting in CoT
+                 const evidenceSnippets: string[] = [];
+                 if (isOffending) {
+                   // Add event snippet if available
+                   if (event?.snippet) {
+                     evidenceSnippets.push(event.snippet);
+                   }
+                   // Add all quotes from all patterns
+                   trace.patterns?.forEach(p => {
+                     p.quotes?.forEach(q => {
+                       if (q.text && !evidenceSnippets.includes(q.text)) {
+                         evidenceSnippets.push(q.text);
+                       }
+                     });
+                   });
+                 }
+
+                 return (
+                   <ConversationTurn
+                     key={idx}
+                     userMessage={turn.user}
+                     assistantMessage={turn.assistant}
+                     turnNumber={turn.turnNumber}
+                     isOffending={isOffending}
+                     offendingColor={catStyle?.borderColor || 'border-red-500'}
+                     evidenceSnippets={evidenceSnippets}
+                     scrollIntoView={isOffending}
+                   />
+                 );
+               });
+             })()}
           </div>
         </div>
 
         {/* RIGHT: Analysis Panel (Only if flagged and has event) */}
         {isFlagged && event && catStyle && (
-          <div className="col-span-7 flex flex-col gap-6 overflow-y-auto pr-2 pb-6">
+          <div className="col-span-7 flex flex-col gap-4 overflow-y-auto pr-2 pb-6">
 
-             {/* Internal Reasoning */}
-             <div className="glass-panel rounded-xl border-slate-800 p-5 relative">
-                <div className={`absolute top-0 left-0 w-1 h-full rounded-l-xl ${catStyle.bgColor.replace('bg-', 'bg-gradient-to-b from-')}`}></div>
-                <h3 className="font-semibold text-slate-300 mb-4 flex items-center gap-2">
-                  <BrainCircuit size={18} className={catStyle.color.replace('text-', 'text-')} />
-                  Internal Reasoning Trace (Full)
-                </h3>
-                <div className="bg-slate-950 rounded-lg p-4 font-mono text-sm text-slate-300 leading-relaxed whitespace-pre-wrap break-words border border-slate-800/50 max-h-[500px] overflow-y-auto custom-scrollbar">
-                  {event.fullCoT}
-                </div>
-             </div>
-
-             {/* Logic Breakdown */}
-             <div className="glass-panel p-5 rounded-xl border-slate-800">
-               <h3 className="font-semibold text-slate-300 mb-4 text-xs uppercase tracking-wider">Detection Logic</h3>
-
-               <div className="space-y-6">
-                 {/* Main Detected Category Breakdown */}
-                 <div>
-                   <div className="flex items-center gap-3 mb-4">
-                      <div className={`p-2 rounded ${catStyle.bgColor}`}>
-                        {Icons[catStyle.icon] && React.createElement(Icons[catStyle.icon], { size: 18, className: catStyle.color })}
-                      </div>
-                      <h4 className={`text-sm font-bold uppercase tracking-wide ${catStyle.color}`}>
-                        {event.category}
-                      </h4>
-                   </div>
-
-                   <div className="bg-slate-900/50 rounded-lg p-4 border border-slate-800 space-y-3">
-                     {PATTERNS_BY_CATEGORY[event.category].map(pattern => {
-                        const isMatched = event.matchedPatterns.includes(pattern);
-                        return (
-                          <div key={pattern} className="flex items-center justify-between">
-                             <div className="flex items-center gap-3">
-                                <div className={`flex items-center justify-center w-5 h-5 rounded-full ${isMatched ? 'bg-green-500/20 text-green-400' : 'bg-slate-800 text-slate-600'}`}>
-                                  {isMatched ? <Check size={12} strokeWidth={3} /> : <Minus size={12} />}
-                                </div>
-                                <span className={`text-sm ${isMatched ? 'text-slate-200 font-medium' : 'text-slate-500'}`}>
-                                  {pattern}
-                                </span>
-                             </div>
-                             {isMatched && (
-                               <span className="text-xs font-mono text-green-400">detected</span>
-                             )}
-                             {!isMatched && (
-                               <span className="text-xs font-mono text-slate-600 italic">not detected</span>
-                             )}
-                          </div>
-                        );
-                     })}
-                   </div>
+             {/* Detected Issues Panel */}
+             {trace.patterns && trace.patterns.length > 0 ? (
+               <DetectedIssuesPanel patterns={trace.patterns} />
+             ) : (
+               /* Fallback: Generate mockup-style issue card from detection event */
+               <div className="bg-slate-900/50 border border-slate-800 rounded-xl overflow-hidden">
+                 {/* Panel Header */}
+                 <div className="flex items-center gap-2 px-5 py-4 border-b border-slate-800 bg-slate-900/70">
+                   <AlertCircle size={16} className="text-amber-500" />
+                   <h3 className="text-sm font-semibold text-amber-500">Detected Issues</h3>
+                   <span className="ml-auto text-xs text-slate-500 font-mono">1 issue</span>
                  </div>
 
-                 {/* Other categories (Collapsed/Simple view) */}
-                 <div>
-                   <button
-                     onClick={() => setShowOtherCategories(!showOtherCategories)}
-                     className="flex items-center gap-2 w-full text-left group hover:bg-slate-800/30 p-2 rounded transition-colors -ml-2"
-                   >
-                      {showOtherCategories ? <ChevronDown size={14} className="text-slate-500" /> : <ChevronRight size={14} className="text-slate-500" />}
-                      <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wide group-hover:text-slate-400 transition-colors">Other Categories Monitored</h4>
-                   </button>
+                 {/* Issue Card */}
+                 <div className="p-5">
+                   {/* Header Row */}
+                   <div className="flex items-start justify-between mb-3">
+                     <div className="flex items-center gap-2.5">
+                       <span className={`w-2.5 h-2.5 rounded-full ${trace.riskScore >= 70 ? 'bg-red-500' : trace.riskScore >= 40 ? 'bg-amber-500' : 'bg-emerald-500'}`} />
+                       <span className="font-mono text-sm font-semibold text-cyan-400">
+                         {normalizedCategory?.substring(0, 2).toUpperCase() || 'DT'}-01
+                       </span>
+                       <span className="text-sm text-slate-500">— {catStyle?.label} action</span>
+                     </div>
+                     <span className={`text-[11px] font-semibold px-2.5 py-1 rounded uppercase tracking-wide border ${
+                       trace.riskScore >= 70
+                         ? 'bg-red-500/15 text-red-400 border-red-500/30'
+                         : trace.riskScore >= 40
+                           ? 'bg-amber-500/15 text-amber-400 border-amber-500/30'
+                           : 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                     }`}>
+                       {trace.riskScore >= 70 ? 'High' : trace.riskScore >= 40 ? 'Medium' : 'Low'}
+                     </span>
+                   </div>
 
-                   {showOtherCategories && (
-                     <div className="grid grid-cols-2 gap-3 mt-3 animate-in slide-in-from-top-1 duration-200">
-                       {Object.keys(CATEGORY_STYLES).filter(c => c !== event.category).map(cat => {
-                         const catStyleDef = CATEGORY_STYLES[cat as DetectionCategory];
-                         const Icon = Icons[catStyleDef.icon];
-                         return (
-                           <div key={cat} className="flex items-center gap-3 p-2 rounded-lg border border-slate-800 opacity-60">
-                              <Icon size={16} className="text-slate-600" />
-                              <span className="text-sm text-slate-500">{cat}</span>
-                           </div>
-                         );
-                       })}
+                   {/* Triad Display - derive from category if possible */}
+                   {(() => {
+                     // Try to get HOW code from category
+                     const howEntry = Object.entries(HOW_VERBS).find(([_, v]) => v.category === normalizedCategory);
+                     const howCode = (howEntry?.[0] || 'H1') as HOWCode;
+                     const howInfo = HOW_VERBS[howCode];
+
+                     // Default WHY and TARGET based on context
+                     const whyCode: WHYCode = 'W1'; // Gamed
+                     const targetCode: TARGETCode = 'T1'; // User
+                     const whyInfo = WHY_VERBS[whyCode];
+                     const targetInfo = TARGET_VERBS[targetCode];
+
+                     return (
+                       <div className="mb-4">
+                         {/* Triad Tags */}
+                         <div className="flex items-center gap-1.5 flex-wrap mb-3">
+                           <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded font-mono bg-purple-500/15 text-purple-400 border border-purple-500/30">
+                             <span className="text-[10px] opacity-70 uppercase tracking-wide">HOW</span>
+                             {howInfo?.verb || normalizedCategory}
+                             <InfoTooltip
+                               title={`${howCode}: ${howInfo?.verb || 'Unknown'}`}
+                               content={howInfo?.description || 'Detection mechanism'}
+                               iconSize={10}
+                             />
+                           </span>
+                           <span className="text-slate-600 text-sm">→</span>
+                           <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded font-mono bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                             <span className="text-[10px] opacity-70 uppercase tracking-wide">WHY</span>
+                             {whyInfo?.verb}
+                             <InfoTooltip
+                               title={`${whyCode}: ${whyInfo?.verb}`}
+                               content={whyInfo?.description || 'Motivation'}
+                               iconSize={10}
+                             />
+                           </span>
+                           <span className="text-slate-600 text-sm">→</span>
+                           <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded font-mono bg-cyan-500/15 text-cyan-400 border border-cyan-500/30">
+                             <span className="text-[10px] opacity-70 uppercase tracking-wide">TARGET</span>
+                             {targetInfo?.verb}
+                             <InfoTooltip
+                               title={`${targetCode}: ${targetInfo?.verb}`}
+                               content={targetInfo?.description || 'Affected party'}
+                               iconSize={10}
+                             />
+                           </span>
+                         </div>
+
+                         {/* Sentence Summary */}
+                         <div className="text-xs text-slate-500 italic px-3 py-2.5 bg-slate-800/50 rounded border-l-2 border-slate-700">
+                           Agent <strong className="text-slate-300 not-italic">{howInfo?.verb?.toLowerCase() || 'manipulated'}</strong> in order to <strong className="text-slate-300 not-italic">{whyInfo?.verb?.toLowerCase()}</strong>, affecting <strong className="text-slate-300 not-italic">{targetInfo?.verb?.toLowerCase()}</strong>
+                         </div>
+                       </div>
+                     );
+                   })()}
+
+                   {/* Evidence Section */}
+                   {event.snippet && (
+                     <div className="mb-4">
+                       <h4 className="text-[11px] font-medium text-slate-600 uppercase tracking-wide mb-2.5">
+                         Evidence from Reasoning
+                       </h4>
+                       <div className="font-mono text-xs text-amber-400 bg-amber-500/10 px-3.5 py-2.5 rounded border-l-2 border-amber-500">
+                         "{event.snippet}"
+                       </div>
                      </div>
                    )}
+
+                   {/* Impact Note */}
+                   <div className="flex items-center gap-2 text-xs text-red-400 mt-3">
+                     <AlertCircle size={14} />
+                     <span>Impact: User may receive incorrect or misleading information</span>
+                   </div>
                  </div>
                </div>
-             </div>
+             )}
 
           </div>
         )}

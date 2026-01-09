@@ -26,6 +26,9 @@ export interface SkillResult {
     total_tokens: number;
   };
   error?: string;
+  // Taxonomy patterns (from taxonomy-auditor)
+  patterns?: any[];
+  primaryCategory?: DetectionCategory;
 }
 
 export interface CombinedAuditResult extends AuditResult {
@@ -38,12 +41,22 @@ export interface CombinedAuditResult extends AuditResult {
     detection_reasoning: string;
     categories_detected: CategoryDetection[];
   };
+  // Aggregated taxonomy patterns from all skills
+  patterns?: any[];
 }
 
 /**
- * Map detection categories to skill IDs
+ * Map detection categories (HOW verbs) to the unified taxonomy auditor
  */
-const CATEGORY_TO_SKILL_ID: Record<DetectionCategory, string> = {
+const CATEGORY_TO_SKILL_ID: Record<string, string> = {
+  // New HOW verb categories -> unified taxonomy auditor
+  'Fabricated': 'taxonomy-auditor',
+  'Sandbagged': 'taxonomy-auditor',
+  'Context-Switched': 'taxonomy-auditor',
+  'Pressured': 'taxonomy-auditor',
+  'Hid': 'taxonomy-auditor',
+  'Overclaimed': 'taxonomy-auditor',
+  // Legacy category names -> map to legacy auditors (for backward compatibility)
   'Goal Reasoning': 'goal-reasoning-auditor',
   'Deception Planning': 'deception-planning-auditor',
   'Reward Hacking': 'reward-hacking-auditor',
@@ -51,7 +64,7 @@ const CATEGORY_TO_SKILL_ID: Record<DetectionCategory, string> = {
   'Obfuscation & Evasion': 'obfuscation-evasion-auditor',
   'Persona Manipulation': 'persona-manipulation-auditor',
   'Sycophancy': 'sycophancy-auditor',
-  'none': 'sycophancy-auditor', // Fallback, shouldn't be used
+  'none': 'taxonomy-auditor', // Default to taxonomy auditor
 };
 
 /**
@@ -65,17 +78,20 @@ export async function executeMultiSkillAudit(
 ): Promise<CombinedAuditResult> {
   // Step 1: Intelligent detection
   console.log('🔍 Detecting relevant manipulation types...');
+  console.log('📝 Conversation has reasoning_trace:', !!conversation.reasoning_trace);
+  console.log('📝 Conversation turns:', conversation.turns?.length || 0);
   const detection = await detectManipulationTypes(conversation, modelName, options);
+  console.log('🔍 Detection result:', JSON.stringify(detection, null, 2));
   
   // Filter out "none" category and low-confidence detections
   const relevantCategories = detection.relevantCategories.filter(
     cat => cat.category !== 'none' && cat.confidence >= 0.2
   );
   
-  // If no relevant categories, still run at least one skill for baseline
-  const categoriesToAudit = relevantCategories.length > 0 
-    ? relevantCategories 
-    : [{ category: 'Sycophancy' as DetectionCategory, confidence: 0.5, reasoning: 'Baseline audit' }];
+  // If no relevant categories, still run the taxonomy auditor for baseline
+  const categoriesToAudit = relevantCategories.length > 0
+    ? relevantCategories
+    : [{ category: 'Fabricated' as DetectionCategory, confidence: 0.5, reasoning: 'Baseline audit' }];
   
   console.log(`📊 Detected ${categoriesToAudit.length} relevant categories:`, 
     categoriesToAudit.map(c => `${c.category} (${(c.confidence * 100).toFixed(0)}%)`).join(', '));
@@ -107,7 +123,14 @@ export async function executeMultiSkillAudit(
         modelName,
         options
       );
-      
+
+      console.log(`✅ Skill ${skillId} result:`, {
+        overall_score: result.overall_score,
+        confidence: result.confidence,
+        detected_types_count: result.detected_types?.length || 0,
+        patterns_count: (result as any).patterns?.length || 0
+      });
+
       return {
         skill_id: result.skill_id,
         category: catDetection.category,
@@ -118,6 +141,9 @@ export async function executeMultiSkillAudit(
         recommendations: result.recommendations,
         limitations: result.limitations,
         usage: result.usage,
+        // Pass through taxonomy patterns if available
+        patterns: (result as any).patterns,
+        primaryCategory: (result as any).primaryCategory,
       } as SkillResult;
     } catch (error: any) {
       console.error(`❌ Error running skill ${skillId}:`, error);
@@ -223,6 +249,21 @@ function combineAuditResults(
   // Use the primary skill's ID for backward compatibility
   const primarySkillId = sortedResults[0]?.skill_id || 'multi-skill-auditor';
   
+  // Extract patterns from skill results (taxonomy auditor returns patterns)
+  const allPatterns: any[] = [];
+  skillResults.forEach((r: any) => {
+    if (r.patterns && Array.isArray(r.patterns)) {
+      allPatterns.push(...r.patterns);
+    }
+  });
+
+  // Also check the raw skill result metrics for patterns
+  skillResults.forEach((r: any) => {
+    if (r.metrics?.patterns && Array.isArray(r.metrics.patterns)) {
+      allPatterns.push(...r.metrics.patterns);
+    }
+  });
+
   return {
     id: auditId,
     conversation_id: conversation.conversation_id,
@@ -257,7 +298,9 @@ function combineAuditResults(
       detection_confidence: detection.overallConfidence,
       detection_reasoning: detection.reasoning,
       categories_detected: detection.relevantCategories
-    }
+    },
+    // Taxonomy patterns from all skill results
+    patterns: allPatterns.length > 0 ? allPatterns : undefined,
   };
 }
 

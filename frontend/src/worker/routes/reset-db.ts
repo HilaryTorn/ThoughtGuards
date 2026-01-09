@@ -79,13 +79,13 @@ resetDbRoutes.post('/', async (c) => {
       `CREATE TABLE IF NOT EXISTS order_items (order_id TEXT NOT NULL, sku TEXT NOT NULL, quantity INTEGER NOT NULL, price REAL NOT NULL, PRIMARY KEY (order_id, sku), FOREIGN KEY (order_id) REFERENCES orders(order_id), FOREIGN KEY (sku) REFERENCES products(sku))`,
       `CREATE TABLE IF NOT EXISTS support_tickets (ticket_id TEXT PRIMARY KEY, order_id TEXT, customer_id TEXT NOT NULL, date TEXT NOT NULL, issue TEXT NOT NULL, status TEXT NOT NULL, resolution TEXT, FOREIGN KEY (order_id) REFERENCES orders(order_id), FOREIGN KEY (customer_id) REFERENCES customers(customer_id))`,
       `CREATE TABLE IF NOT EXISTS policies (policy_type TEXT PRIMARY KEY, policy_data TEXT NOT NULL)`,
-      `CREATE TABLE IF NOT EXISTS conversations (conversation_id TEXT PRIMARY KEY, customer_id TEXT NOT NULL, chatbot_mode TEXT NOT NULL, chatbot_provider TEXT, chatbot_model TEXT, started_at TEXT NOT NULL, ended_at TEXT, label TEXT, expected_manipulation INTEGER DEFAULT 0, source_file TEXT, file_hash TEXT, FOREIGN KEY (customer_id) REFERENCES customers(customer_id))`,
+      `CREATE TABLE IF NOT EXISTS conversations (conversation_id TEXT PRIMARY KEY, customer_id TEXT, chatbot_mode TEXT, chatbot_provider TEXT, chatbot_model TEXT, started_at TEXT NOT NULL, ended_at TEXT, label TEXT, expected_manipulation INTEGER DEFAULT 0, source_file TEXT, file_hash TEXT)`,
       `CREATE TABLE IF NOT EXISTS conversation_turns (turn_id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, turn_number INTEGER NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL, reasoning_content TEXT, timestamp TEXT NOT NULL, FOREIGN KEY (conversation_id) REFERENCES conversations(conversation_id))`,
       `CREATE TABLE IF NOT EXISTS tool_calls (call_id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, turn_id TEXT NOT NULL, tool_name TEXT NOT NULL, arguments TEXT NOT NULL, result TEXT NOT NULL, timestamp TEXT NOT NULL, FOREIGN KEY (conversation_id) REFERENCES conversations(conversation_id), FOREIGN KEY (turn_id) REFERENCES conversation_turns(turn_id))`,
       `CREATE TABLE IF NOT EXISTS escalations (escalation_id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, customer_id TEXT NOT NULL, reason TEXT NOT NULL, priority TEXT NOT NULL, timestamp TEXT NOT NULL, FOREIGN KEY (conversation_id) REFERENCES conversations(conversation_id), FOREIGN KEY (customer_id) REFERENCES customers(customer_id))`,
       `CREATE TABLE IF NOT EXISTS email_log (email_id TEXT PRIMARY KEY, conversation_id TEXT, customer_id TEXT NOT NULL, subject TEXT NOT NULL, body TEXT NOT NULL, timestamp TEXT NOT NULL, FOREIGN KEY (conversation_id) REFERENCES conversations(conversation_id), FOREIGN KEY (customer_id) REFERENCES customers(customer_id))`,
       `CREATE TABLE IF NOT EXISTS sync_status (conversation_id TEXT PRIMARY KEY, source_file TEXT NOT NULL, file_hash TEXT NOT NULL, last_synced TEXT NOT NULL, FOREIGN KEY (conversation_id) REFERENCES conversations(conversation_id))`,
-      `CREATE TABLE IF NOT EXISTS audit_results (audit_id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, model_name TEXT NOT NULL, overall_score REAL NOT NULL, confidence TEXT NOT NULL, detected_types TEXT, metrics TEXT, recommendations TEXT, raw_response TEXT, primary_category TEXT, secondary_categories TEXT, score_mean REAL, score_stddev REAL, run_count INTEGER DEFAULT 1, created_at TEXT NOT NULL, FOREIGN KEY (conversation_id) REFERENCES conversations(conversation_id))`,
+      `CREATE TABLE IF NOT EXISTS audit_results (audit_id TEXT PRIMARY KEY, trace_id TEXT NOT NULL UNIQUE, conversation_id TEXT NOT NULL, skill_id TEXT NOT NULL, model_name TEXT NOT NULL, overall_score REAL NOT NULL, confidence TEXT NOT NULL, status TEXT NOT NULL, risk_score REAL NOT NULL, detected_types TEXT, metrics TEXT, recommendations TEXT, limitations TEXT, usage TEXT, detection_event TEXT, conversation_data TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, skill_results TEXT, combined_score REAL, primary_category TEXT, secondary_categories TEXT, detection_metadata TEXT, patterns TEXT, run_count INTEGER DEFAULT 1, score_mean REAL, score_stddev REAL, score_p5 REAL, score_p50 REAL, score_p95 REAL, score_ci_lower REAL, score_ci_upper REAL, calibration_metrics TEXT, raw_response TEXT, FOREIGN KEY (conversation_id) REFERENCES conversations(conversation_id))`,
       `CREATE INDEX IF NOT EXISTS idx_customers_customer_id ON customers(customer_id)`,
       `CREATE INDEX IF NOT EXISTS idx_products_sku ON products(sku)`,
       `CREATE INDEX IF NOT EXISTS idx_orders_customer_id ON orders(customer_id)`,
@@ -94,7 +94,9 @@ resetDbRoutes.post('/', async (c) => {
       `CREATE INDEX IF NOT EXISTS idx_tool_calls_conversation_id ON tool_calls(conversation_id)`,
       `CREATE INDEX IF NOT EXISTS idx_tool_calls_turn_id ON tool_calls(turn_id)`,
       `CREATE INDEX IF NOT EXISTS idx_sync_status_source_file ON sync_status(source_file)`,
-      `CREATE INDEX IF NOT EXISTS idx_audit_results_conversation_id ON audit_results(conversation_id)`
+      `CREATE INDEX IF NOT EXISTS idx_audit_results_conversation_id ON audit_results(conversation_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_audit_results_trace_id ON audit_results(trace_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_audit_results_created_at ON audit_results(created_at)`
     ];
 
     let appliedStatements = 0;
