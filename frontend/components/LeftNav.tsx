@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { LayoutDashboard, List, Settings, Shield, FileText } from 'lucide-react';
+import { LayoutDashboard, List, Settings, FileText } from 'lucide-react';
 import { AppView } from '../types';
 
 interface LeftNavProps {
@@ -20,9 +20,11 @@ const LeftNav: React.FC<LeftNavProps> = ({ currentView, onNavigate }) => {
     <div className="w-64 h-screen fixed left-0 top-0 bg-slate-950 border-r border-slate-800 flex flex-col z-50">
       {/* Brand */}
       <Link to="/" className="h-16 flex items-center px-6 border-b border-slate-800 gap-3 hover:bg-slate-900/50 transition-colors">
-        <div className="bg-gradient-to-tr from-cyan-500 to-blue-600 p-1.5 rounded-lg shadow-[0_0_15px_rgba(6,182,212,0.3)]">
-          <Shield className="text-white w-5 h-5" />
-        </div>
+        <img
+          src="/thought-guards-logo.png"
+          alt="Thought Guards"
+          className="w-8 h-8 object-contain rounded-lg"
+        />
         <span className="font-bold text-slate-100 tracking-tight">Thought Guards</span>
       </Link>
 

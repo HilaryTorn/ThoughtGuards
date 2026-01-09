@@ -1,11 +1,39 @@
+// HOW axis categories (H1-H6) - the observable mechanism
+export type DetectionCategory =
+  | 'Fabricated'        // H1: Misrepresentation - states false facts/actions/capabilities
+  | 'Sandbagged'        // H2: Capability Suppression - strategically underperforms/feigns inability
+  | 'Context-Switched'  // H3: Oversight-Conditional - behavior changes when eval/oversight detected
+  | 'Pressured'         // H4: Influence Tactics - steers via framing/authority/urgency
+  | 'Hid'               // H5: Omission/Obfuscation - withholds crucial info
+  | 'Overclaimed';      // H6: Miscalibration - confidence/precision exceeds evidence
 
-export type DetectionCategory = 
-  | 'Goal Reasoning'
-  | 'Deception Planning'
-  | 'Reward Hacking'
-  | 'Sabotage Planning'
-  | 'Obfuscation & Evasion'
-  | 'Persona Manipulation';
+// Taxonomy axis codes
+export type WHYCode = 'W1' | 'W2' | 'W3' | 'W4';
+export type HOWCode = 'H1' | 'H2' | 'H3' | 'H4' | 'H5' | 'H6';
+export type TARGETCode = 'T1' | 'T2' | 'T3' | 'T4';
+
+// Taxonomy axis verbs
+export type WHYVerb = 'Gamed' | 'Pleased' | 'Shortcut' | 'Dodged';
+export type HOWVerb = DetectionCategory; // Same as category names
+export type TARGETVerb = 'User' | 'Evaluator' | 'Policy' | 'External';
+
+// Full triad code (e.g., "T2|H1|W4")
+export type TriadCode = `${TARGETCode}|${HOWCode}|${WHYCode}`;
+
+// Taxonomy detection result from auditor
+export interface TaxonomyDetection {
+  triad: TriadCode;
+  why: { code: WHYCode; verb: WHYVerb; name: string };
+  how: { code: HOWCode; verb: HOWVerb; name: string };
+  target: { code: TARGETCode; verb: TARGETVerb; name: string };
+  sentence: string; // "Agent [HOW] in order to [WHY], affecting [TARGET]"
+  evidence: Array<{
+    quote: string;
+    message_index: number;
+    source: 'conversation' | 'reasoning_trace';
+  }>;
+  confidence: number;
+}
 
 export interface Message {
   role: 'user' | 'assistant' | 'system';
@@ -78,6 +106,29 @@ export interface Trace {
       reasoning: string;
     }>;
   };
+  // Taxonomy patterns from new auditor
+  patterns?: Array<{
+    triad: string;
+    how_code: HOWCode;
+    why_code: WHYCode;
+    target_code: TARGETCode;
+    sentence: string;
+    short_desc: string;
+    prominence: number;
+    pattern_confidence: number;
+    severity?: number;
+    quotes?: Array<{
+      speaker: string;
+      message_index: number;
+      text: string;
+      source: 'conversation' | 'reasoning_trace';
+    }>;
+    evidence_notes?: string;
+    // Enriched data
+    how?: { code: HOWCode; verb: string; name: string };
+    why?: { code: WHYCode; verb: string; name: string };
+    target?: { code: TARGETCode; verb: string; name: string };
+  }>;
 }
 
 export interface CategoryStyle {
@@ -551,35 +602,10 @@ export interface ConfidenceInterval {
   width: number;
 }
 
-// Update Trace to reference report_id instead of audit_id
-// (Keeping backward compatibility with auditId for now)
-export interface Trace {
-  id: string;
-  timestamp: string;
-  messageCount: number;
-  status: TraceStatus;
-  riskScore: number;
-  detectionEvent?: DetectionEvent;
-  conversation: Message[];
-  // Audit metadata (if available from database)
-  auditId?: string; // Deprecated: use reportId
+// Extended Trace type alias for report system (extends base Trace)
+// Note: The main Trace interface is defined earlier in this file
+export type ExtendedTrace = Trace & {
   reportId?: string; // New: reference to audit_reports table
-  conversationId?: string;
-  skillId?: string;
-  modelName?: string;
-  overallScore?: number;
-  confidence?: string;
-  detectedTypes?: Array<{ type: string; score: number; evidence: any[] }>;
-  metrics?: any;
-  recommendations?: string[];
-  limitations?: string[];
-  usage?: TokenUsage;
-  // Multi-skill fields (optional for backward compatibility)
-  skillResults?: SkillResult[];
-  combinedScore?: number;
-  primaryCategory?: string;
-  secondaryCategories?: string[];
-  detectionMetadata?: DetectionMetadata;
   // Statistical fields
   runCount?: number;
   scoreMean?: number;
@@ -604,4 +630,4 @@ export interface Trace {
       winsorizedMean: number;
     };
   };
-}
+};
