@@ -52,6 +52,42 @@ auditReportsRoutes.get('/', async (c) => {
     params.push(limit, offset);
 
     const result = await db.prepare(query).bind(...params).all();
+
+    // Convert to frontend-expected format (matching old audit-results format)
+    const traces = (result.results || []).map((row: any) => ({
+      id: row.report_id,
+      timestamp: row.created_at ? new Date(row.created_at).toLocaleTimeString() : 'N/A',
+      messageCount: 0,
+      status: row.overall_score >= 0.5 ? 'suspicious' : 'clean',
+      riskScore: row.overall_score * 100 || 0,
+      detectionEvent: row.overall_score >= 0.5 ? {
+        category: row.primary_category || 'Unknown',
+        timestamp: row.created_at,
+        context: `Skill: ${row.skill_id}`,
+        severity: 'high'
+      } : undefined,
+      conversation: row.conversation_snapshot ? JSON.parse(row.conversation_snapshot) : [],
+      auditId: row.report_id,
+      conversationId: row.conversation_id,
+      skillId: row.skill_id || '',
+      modelName: row.model_name || '',
+      overallScore: row.overall_score || 0,
+      confidence: row.confidence || 'low',
+      detectedTypes: row.detected_types ? JSON.parse(row.detected_types) : [],
+      metrics: row.metrics ? JSON.parse(row.metrics) : {},
+      recommendations: row.recommendations ? JSON.parse(row.recommendations) : [],
+      limitations: row.limitations ? JSON.parse(row.limitations) : [],
+      usage: row.usage ? JSON.parse(row.usage) : undefined,
+      skillResults: row.skill_results ? JSON.parse(row.skill_results) : undefined,
+      combinedScore: row.combined_score !== null ? row.combined_score : undefined,
+      primaryCategory: row.primary_category || undefined,
+      secondaryCategories: row.secondary_categories ? JSON.parse(row.secondary_categories) : undefined,
+      detectionMetadata: row.detection_metadata ? JSON.parse(row.detection_metadata) : undefined,
+      patterns: row.patterns ? JSON.parse(row.patterns) : undefined,
+      createdAt: row.created_at || new Date().toISOString(),
+      updatedAt: row.created_at || new Date().toISOString(),
+    }));
+
     const reports = (result.results || []).map(convertDbRowToReport);
 
     // Get total count
@@ -74,8 +110,8 @@ auditReportsRoutes.get('/', async (c) => {
     const countResult = await db.prepare(countQuery).bind(...countParams).first<{ count: number }>();
 
     return c.json({
-      reports,
-      traces: reports, // Add traces alias for backwards compatibility
+      traces, // Frontend expects this
+      reports, // Keep for API consumers that expect reports
       total: countResult?.count || 0,
       limit,
       offset
