@@ -33,7 +33,14 @@ auditResultsRoutes.get('/', async (c) => {
   const status = c.req.query('status');
 
   try {
-    let query = 'SELECT * FROM audit_reports WHERE 1=1';
+    // Select only fields needed for list view (exclude large conversation_snapshot)
+    let query = `SELECT
+      report_id, conversation_id, created_at, skill_id, model_name,
+      overall_score, confidence, primary_category, detected_types,
+      skill_results, combined_score, secondary_categories, detection_metadata,
+      run_count, score_mean, score_stddev, score_p5, score_p50, score_p95,
+      score_ci_lower, score_ci_upper, usage
+    FROM audit_reports WHERE 1=1`;
     const params: any[] = [];
 
     if (conversationId) {
@@ -70,7 +77,7 @@ auditResultsRoutes.get('/', async (c) => {
     const traces = (result.results || []).map((row: any) => ({
       id: row.report_id || row.trace_id,
       timestamp: row.created_at ? new Date(row.created_at).toLocaleTimeString() : 'N/A',
-      messageCount: row.conversation_snapshot ? JSON.parse(row.conversation_snapshot).length : 0,
+      messageCount: 0, // Will be populated when viewing details, not needed for list
       status: row.overall_score >= 0.5 ? 'suspicious' : 'clean',
       riskScore: row.overall_score * 100 || 0,
       detectionEvent: row.overall_score >= 0.5 ? {
@@ -79,7 +86,7 @@ auditResultsRoutes.get('/', async (c) => {
         context: `Skill: ${row.skill_id}`,
         severity: 'high'
       } : undefined,
-      conversation: row.conversation_snapshot ? JSON.parse(row.conversation_snapshot) : [],
+      conversation: [], // Not fetched in list view for performance
       // Audit metadata
       auditId: row.report_id,
       conversationId: row.conversation_id,
@@ -88,9 +95,9 @@ auditResultsRoutes.get('/', async (c) => {
       overallScore: row.overall_score || 0,
       confidence: row.confidence || 'low',
       detectedTypes: row.detected_types ? JSON.parse(row.detected_types) : [],
-      metrics: row.metrics ? JSON.parse(row.metrics) : {},
-      recommendations: [], // audit_reports doesn't have this field
-      limitations: [], // audit_reports doesn't have this field
+      metrics: {}, // Skipped in list view for performance
+      recommendations: [], // Not needed in list view
+      limitations: [], // Not needed in list view
       usage: row.usage ? JSON.parse(row.usage) : undefined,
       // Multi-skill fields
       skillResults: row.skill_results ? JSON.parse(row.skill_results) : undefined,
