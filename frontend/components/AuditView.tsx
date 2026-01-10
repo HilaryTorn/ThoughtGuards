@@ -116,7 +116,7 @@ const AuditView: React.FC<AuditViewProps> = ({ onResult, settings }) => {
         // Load existing audit results from database
         let existingAudits: Map<string, AuditResult> = new Map();
         try {
-          const auditResponse = await fetch('/api/audit-results?limit=10000');
+          const auditResponse = await fetch('/api/audit-reports?limit=10000');
           if (auditResponse.ok) {
             const auditData = await auditResponse.json();
             if (auditData.traces && Array.isArray(auditData.traces)) {

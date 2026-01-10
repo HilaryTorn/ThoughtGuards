@@ -107,9 +107,9 @@ auditResultsRoutes.get('/', async (c) => {
       detectionMetadata: row.detection_metadata ? JSON.parse(row.detection_metadata) : undefined,
       // Taxonomy patterns from taxonomy-auditor
       patterns: row.patterns ? JSON.parse(row.patterns) : undefined,
-      // Statistical fields
-      runCount: row.run_count || 1,
-      statistics: row.score_mean !== null ? {
+      // Statistical fields (may not exist in audit_reports table)
+      runCount: row.run_count || undefined,
+      statistics: (row.score_mean !== null && row.score_mean !== undefined) ? {
         mean: row.score_mean,
         stddev: row.score_stddev || 0,
         quantiles: {

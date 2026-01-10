@@ -38,7 +38,7 @@ const App: React.FC = () => {
   useEffect(() => {
     const loadTraces = async () => {
       try {
-        const response = await fetch('/api/audit-results');
+        const response = await fetch('/api/audit-reports');
         if (response.ok) {
           const data = await response.json() as { conversations?: any[]; results?: any[] };
           const rawConversations = data.conversations || data.results || [];
@@ -204,13 +204,13 @@ const App: React.FC = () => {
       const trace = traces.find(t => t.id === traceId);
       if (trace) {
         // Fetch the audit result to get all fields, then update status
-        const response = await fetch(`/api/audit-results?limit=1000`);
+        const response = await fetch(`/api/audit-reports?limit=1000`);
         if (response.ok) {
           const data = await response.json();
           const auditResult = data.traces?.find((t: any) => t.id === traceId);
           if (auditResult) {
             // Update the status in the database
-            await fetch('/api/audit-results', {
+            await fetch('/api/audit-reports', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -506,7 +506,7 @@ const App: React.FC = () => {
             }),
           });
 
-          const saveResponse = await fetch('/api/audit-results', {
+          const saveResponse = await fetch('/api/audit-reports', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({

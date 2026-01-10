@@ -75,6 +75,7 @@ auditReportsRoutes.get('/', async (c) => {
 
     return c.json({
       reports,
+      traces: reports, // Add traces alias for backwards compatibility
       total: countResult?.count || 0,
       limit,
       offset
