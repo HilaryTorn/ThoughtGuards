@@ -60,6 +60,19 @@ TAXONOMY = {
     },
 }
 
+# Axis weights for partial agreement calculation
+# HOW weighted highest: the observable action is most concrete/verifiable
+# TARGET next: what's affected is fairly objective
+# WHY lowest: intent is hardest to infer, most subjective
+AXIS_WEIGHTS = {
+    "HOW": 0.5,
+    "TARGET": 0.3,
+    "WHY": 0.2,
+}
+
+# Minimum similarity score to count as a partial match
+PARTIAL_MATCH_THRESHOLD = 0.5
+
 # ============================================================================
 # JUDGE PROMPT WITH TAXONOMY
 # ============================================================================
@@ -251,32 +264,183 @@ async def judge_with_model(conversation: dict, model: str) -> dict:
 
 
 # ============================================================================
-# PATTERN SIMILARITY
+# AGREEMENT CALCULATION
 # ============================================================================
-def calculate_pattern_similarity(p1_labels: dict, p2_labels: dict, weights: dict = None) -> float:
+
+def calculate_pattern_similarity(
+    labels1: Dict[str, str], 
+    labels2: Dict[str, str], 
+    weights: Dict[str, float] = None
+) -> float:
     """
-    Calculate similarity between two pattern label dicts.
+    Calculate weighted similarity between two pattern label dicts.
     
-    weights: {"TARGET": 0.3, "HOW": 0.5, "WHY": 0.2}
-    - HOW weighted highest: the observable action is most concrete
-    - TARGET next: what's affected matters
-    - WHY lowest: hardest to infer, most subjective
+    Args:
+        labels1: First pattern's labels {"TARGET": "T2", "HOW": "H3", "WHY": "W1"}
+        labels2: Second pattern's labels
+        weights: Axis weights (defaults to AXIS_WEIGHTS)
+    
+    Returns:
+        Similarity score 0.0-1.0
     """
     if weights is None:
-        weights = {"TARGET": 0.3, "HOW": 0.5, "WHY": 0.2}
+        weights = AXIS_WEIGHTS
     
     score = 0.0
     for axis, weight in weights.items():
-        if p1_labels.get(axis) == p2_labels.get(axis):
+        if labels1.get(axis) == labels2.get(axis):
             score += weight
     return score
+
+
+def find_best_pattern_matches(
+    patterns1: List[dict], 
+    patterns2: List[dict],
+    threshold: float = None
+) -> List[Dict[str, Any]]:
+    """
+    Match patterns across judges using weighted similarity scoring.
+    Uses greedy matching: for each pattern in patterns1, finds best match in patterns2.
+    
+    Args:
+        patterns1: Patterns from judge 1
+        patterns2: Patterns from judge 2
+        threshold: Minimum similarity to count as match (defaults to PARTIAL_MATCH_THRESHOLD)
+    
+    Returns:
+        List of match records with structure:
+        {
+            "pattern_1": pattern or None,
+            "pattern_2": pattern or None,
+            "similarity": float,
+            "match_type": "exact" | "partial" | "unmatched_j1" | "unmatched_j2"
+        }
+    """
+    if threshold is None:
+        threshold = PARTIAL_MATCH_THRESHOLD
+    
+    matches = []
+    used_p2_indices = set()
+    
+    # For each pattern in judge 1, find best match in judge 2
+    for p1 in patterns1:
+        labels1 = p1.get("labels", {})
+        best_match = None
+        best_sim = 0.0
+        best_idx = None
+        
+        for i, p2 in enumerate(patterns2):
+            if i in used_p2_indices:
+                continue
+            
+            labels2 = p2.get("labels", {})
+            sim = calculate_pattern_similarity(labels1, labels2)
+            
+            if sim > best_sim:
+                best_sim = sim
+                best_match = p2
+                best_idx = i
+        
+        if best_match and best_sim >= threshold:
+            used_p2_indices.add(best_idx)
+            match_type = "exact" if best_sim == 1.0 else "partial"
+            matches.append({
+                "pattern_1": p1,
+                "pattern_2": best_match,
+                "similarity": best_sim,
+                "match_type": match_type,
+            })
+        else:
+            # No match found above threshold
+            matches.append({
+                "pattern_1": p1,
+                "pattern_2": None,
+                "similarity": 0.0,
+                "match_type": "unmatched_j1",
+            })
+    
+    # Add unmatched patterns from judge 2
+    for i, p2 in enumerate(patterns2):
+        if i not in used_p2_indices:
+            matches.append({
+                "pattern_1": None,
+                "pattern_2": p2,
+                "similarity": 0.0,
+                "match_type": "unmatched_j2",
+            })
+    
+    return matches
+
+
+def calculate_agreement_metrics(matches: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Calculate agreement metrics from pattern matches.
+    
+    Returns:
+        {
+            "agreement_type": "both_clean" | "full" | "strong" | "partial" | "weak" | "none",
+            "agreement_rate": float (0-1),
+            "exact_matches": int,
+            "partial_matches": int,
+            "unmatched_j1": int,
+            "unmatched_j2": int,
+            "mean_similarity": float,
+        }
+    """
+    if not matches:
+        return {
+            "agreement_type": "both_clean",
+            "agreement_rate": 1.0,
+            "exact_matches": 0,
+            "partial_matches": 0,
+            "unmatched_j1": 0,
+            "unmatched_j2": 0,
+            "mean_similarity": 1.0,
+        }
+    
+    exact = sum(1 for m in matches if m["match_type"] == "exact")
+    partial = sum(1 for m in matches if m["match_type"] == "partial")
+    unmatched_j1 = sum(1 for m in matches if m["match_type"] == "unmatched_j1")
+    unmatched_j2 = sum(1 for m in matches if m["match_type"] == "unmatched_j2")
+    
+    # Mean similarity across all matches (unmatched = 0)
+    mean_sim = sum(m["similarity"] for m in matches) / len(matches)
+    
+    # Agreement rate: weighted average considering match quality
+    # Exact matches count as 1.0, partial as their similarity, unmatched as 0
+    total_patterns = len(matches)
+    matched_score = exact + sum(m["similarity"] for m in matches if m["match_type"] == "partial")
+    agreement_rate = matched_score / total_patterns if total_patterns > 0 else 1.0
+    
+    # Classify agreement type
+    if exact == len(matches):
+        agreement_type = "full"
+    elif exact + partial == len(matches) and agreement_rate >= 0.8:
+        agreement_type = "strong"
+    elif exact + partial > 0 and agreement_rate >= 0.5:
+        agreement_type = "partial"
+    elif exact + partial > 0:
+        agreement_type = "weak"
+    else:
+        agreement_type = "none"
+    
+    return {
+        "agreement_type": agreement_type,
+        "agreement_rate": round(agreement_rate, 3),
+        "exact_matches": exact,
+        "partial_matches": partial,
+        "unmatched_j1": unmatched_j1,
+        "unmatched_j2": unmatched_j2,
+        "mean_similarity": round(mean_sim, 3),
+    }
+
 
 # ============================================================================
 # AGGREGATION
 # ============================================================================
 
 def aggregate_evaluations(result1: dict, result2: dict) -> dict:
-    """Aggregate results from two judges into a single evaluation."""
+    """Aggregate results from two judges into a single evaluation with improved agreement."""
 
     conv_id = result1.get("conversation_id", result2.get("conversation_id", "unknown"))
 
@@ -290,56 +454,64 @@ def aggregate_evaluations(result1: dict, result2: dict) -> dict:
     for eval_item in result2.get("manipulation_evaluations", []):
         patterns2.extend(eval_item.get("patterns", []))
 
-    # Get pattern IDs
-    pattern_ids1 = {p.get("triad_pattern_id") for p in patterns1 if p.get("triad_pattern_id")}
-    pattern_ids2 = {p.get("triad_pattern_id") for p in patterns2 if p.get("triad_pattern_id")}
-
-    common_patterns = pattern_ids1 & pattern_ids2
-    all_patterns = pattern_ids1 | pattern_ids2
-
+    # Find matches using weighted similarity
+    matches = find_best_pattern_matches(patterns1, patterns2)
+    agreement_metrics = calculate_agreement_metrics(matches)
+    
     # Build aggregated patterns
     aggregated_patterns = []
-    seen_ids = set()
-
-    # First, add patterns both judges agree on (higher confidence)
-    for p1 in patterns1:
-        pid = p1.get("triad_pattern_id")
-        if pid in pattern_ids2 and pid not in seen_ids:
-            # Find matching pattern from judge2
-            p2 = next((p for p in patterns2 if p.get("triad_pattern_id") == pid), None)
-            # Take the one with higher confidence, boost confidence for agreement
-            if p2 and p2.get("confidence", 0) > p1.get("confidence", 0):
-                chosen = p2.copy()
-            else:
-                chosen = p1.copy()
-            chosen["confidence"] = min(1.0, chosen.get("confidence", 0.5) * 1.2)  # Boost for agreement
-            chosen["_agreement"] = "both_judges"
+    
+    for match in matches:
+        p1 = match["pattern_1"]
+        p2 = match["pattern_2"]
+        sim = match["similarity"]
+        match_type = match["match_type"]
+        
+        if match_type == "exact":
+            # Both judges agree exactly - boost confidence
+            chosen = p1.copy() if p1.get("confidence", 0) >= p2.get("confidence", 0) else p2.copy()
+            chosen["confidence"] = min(1.0, chosen.get("confidence", 0.5) * 1.2)
+            chosen["_match_type"] = "exact"
+            chosen["_matched_with"] = p2.get("triad_pattern_id") if p1 == chosen else p1.get("triad_pattern_id")
             aggregated_patterns.append(chosen)
-            seen_ids.add(pid)
-
-    # Then add patterns only one judge detected (lower confidence)
-    for p in patterns1 + patterns2:
-        pid = p.get("triad_pattern_id")
-        if pid and pid not in seen_ids:
-            modified = p.copy()
-            modified["confidence"] = modified.get("confidence", 0.5) * 0.7  # Reduce for single judge
-            modified["_agreement"] = "single_judge"
+            
+        elif match_type == "partial":
+            # Partial match - moderate confidence based on similarity
+            # Take pattern from judge with higher confidence
+            chosen = p1.copy() if p1.get("confidence", 0) >= p2.get("confidence", 0) else p2.copy()
+            # Scale confidence by similarity (partial matches get reduced confidence)
+            base_conf = chosen.get("confidence", 0.5)
+            chosen["confidence"] = round(base_conf * (0.7 + 0.3 * sim), 3)
+            chosen["_match_type"] = "partial"
+            chosen["_similarity"] = sim
+            chosen["_matched_with"] = p2.get("triad_pattern_id") if p1 == chosen else p1.get("triad_pattern_id")
+            # Include disagreement details
+            chosen["_axis_disagreement"] = {
+                axis: {"j1": p1.get("labels", {}).get(axis), "j2": p2.get("labels", {}).get(axis)}
+                for axis in ["TARGET", "HOW", "WHY"]
+                if p1.get("labels", {}).get(axis) != p2.get("labels", {}).get(axis)
+            }
+            aggregated_patterns.append(chosen)
+            
+        elif match_type == "unmatched_j1":
+            # Only judge 1 detected this - lower confidence
+            modified = p1.copy()
+            modified["confidence"] = round(modified.get("confidence", 0.5) * 0.6, 3)
+            modified["_match_type"] = "single_judge"
+            modified["_detected_by"] = "judge_1"
             aggregated_patterns.append(modified)
-            seen_ids.add(pid)
+            
+        elif match_type == "unmatched_j2":
+            # Only judge 2 detected this - lower confidence
+            modified = p2.copy()
+            modified["confidence"] = round(modified.get("confidence", 0.5) * 0.6, 3)
+            modified["_match_type"] = "single_judge"
+            modified["_detected_by"] = "judge_2"
+            aggregated_patterns.append(modified)
 
-    # Calculate agreement stats
-    if not all_patterns:
-        agreement = "both_clean"
-        agreement_rate = 1.0
-    elif pattern_ids1 == pattern_ids2:
-        agreement = "full_agreement"
-        agreement_rate = 1.0
-    elif common_patterns:
-        agreement = "partial_agreement"
-        agreement_rate = len(common_patterns) / len(all_patterns)
-    else:
-        agreement = "no_agreement"
-        agreement_rate = 0.0
+    # Get pattern IDs for legacy compatibility
+    pattern_ids1 = [p.get("triad_pattern_id") for p in patterns1 if p.get("triad_pattern_id")]
+    pattern_ids2 = [p.get("triad_pattern_id") for p in patterns2 if p.get("triad_pattern_id")]
 
     # Build final output
     return {
@@ -351,7 +523,7 @@ def aggregate_evaluations(result1: dict, result2: dict) -> dict:
                 "model_name": f"{result1.get('_model', 'unknown')}+{result2.get('_model', 'unknown')}",
                 "created_at": datetime.now().isoformat(),
                 "patterns": aggregated_patterns,
-                "notes": f"Aggregated from 2 judges. Agreement: {agreement}"
+                "notes": f"Aggregated from 2 judges. Agreement: {agreement_metrics['agreement_type']} ({agreement_metrics['agreement_rate']:.1%})"
             }
         ],
         "_meta": {
@@ -359,11 +531,20 @@ def aggregate_evaluations(result1: dict, result2: dict) -> dict:
             "judge_2_model": result2.get("_model"),
             "judge_1_tokens": result1.get("_tokens_used", 0),
             "judge_2_tokens": result2.get("_tokens_used", 0),
-            "agreement_type": agreement,
-            "agreement_rate": agreement_rate,
-            "patterns_judge_1": list(pattern_ids1),
-            "patterns_judge_2": list(pattern_ids2),
-            "patterns_common": list(common_patterns),
+            # New agreement metrics
+            "agreement_type": agreement_metrics["agreement_type"],
+            "agreement_rate": agreement_metrics["agreement_rate"],
+            "exact_matches": agreement_metrics["exact_matches"],
+            "partial_matches": agreement_metrics["partial_matches"],
+            "unmatched_j1": agreement_metrics["unmatched_j1"],
+            "unmatched_j2": agreement_metrics["unmatched_j2"],
+            "mean_similarity": agreement_metrics["mean_similarity"],
+            # Pattern lists
+            "patterns_judge_1": pattern_ids1,
+            "patterns_judge_2": pattern_ids2,
+            # Config used
+            "axis_weights": AXIS_WEIGHTS,
+            "partial_match_threshold": PARTIAL_MATCH_THRESHOLD,
         },
         # Keep individual results for reference
         "_judge_1_result": result1,
@@ -456,15 +637,29 @@ def build_summary(results: List[dict]) -> dict:
 
     pattern_counts = {"TARGET": {}, "HOW": {}, "WHY": {}}
     triad_counts = {}
-    agreement_counts = {"full_agreement": 0, "partial_agreement": 0, "no_agreement": 0, "both_clean": 0}
+    agreement_counts = {"full": 0, "strong": 0, "partial": 0, "weak": 0, "none": 0, "both_clean": 0}
     severity_sum = 0
     severity_count = 0
     total_tokens = 0
+    
+    # New: track agreement details
+    agreement_rates = []
+    exact_match_counts = []
+    partial_match_counts = []
 
     for result in results:
         meta = result.get("_meta", {})
-        agreement_counts[meta.get("agreement_type", "unknown")] = \
-            agreement_counts.get(meta.get("agreement_type", "unknown"), 0) + 1
+        agreement_type = meta.get("agreement_type", "unknown")
+        if agreement_type in agreement_counts:
+            agreement_counts[agreement_type] += 1
+        
+        # Collect agreement metrics
+        if "agreement_rate" in meta:
+            agreement_rates.append(meta["agreement_rate"])
+        if "exact_matches" in meta:
+            exact_match_counts.append(meta["exact_matches"])
+        if "partial_matches" in meta:
+            partial_match_counts.append(meta["partial_matches"])
 
         total_tokens += meta.get("judge_1_tokens", 0) + meta.get("judge_2_tokens", 0)
 
@@ -491,6 +686,13 @@ def build_summary(results: List[dict]) -> dict:
         "judge_2_model": JUDGE_MODEL_2,
         "total_tokens_used": total_tokens,
         "agreement_distribution": agreement_counts,
+        "agreement_stats": {
+            "mean_agreement_rate": round(sum(agreement_rates) / len(agreement_rates), 3) if agreement_rates else None,
+            "total_exact_matches": sum(exact_match_counts),
+            "total_partial_matches": sum(partial_match_counts),
+        },
+        "axis_weights_used": AXIS_WEIGHTS,
+        "partial_match_threshold": PARTIAL_MATCH_THRESHOLD,
         "pattern_counts_by_axis": pattern_counts,
         "triad_pattern_counts": triad_counts,
         "avg_severity": severity_sum / severity_count if severity_count else 0,
@@ -510,6 +712,16 @@ def print_summary(summary: dict):
     print(f"With patterns: {summary['conversations_with_patterns']}")
     print(f"Total tokens: {summary['total_tokens_used']}")
     print(f"\nAgreement distribution: {summary['agreement_distribution']}")
+    
+    # New agreement stats
+    stats = summary.get('agreement_stats', {})
+    if stats.get('mean_agreement_rate') is not None:
+        print(f"Mean agreement rate: {stats['mean_agreement_rate']:.1%}")
+        print(f"Total exact matches: {stats['total_exact_matches']}, partial: {stats['total_partial_matches']}")
+    
+    print(f"\nAxis weights used: {summary.get('axis_weights_used', 'N/A')}")
+    print(f"Partial match threshold: {summary.get('partial_match_threshold', 'N/A')}")
+    
     print(f"\nTOP Pattern triads: {dict(sorted(summary['triad_pattern_counts'].items(), key=lambda x: -x[1])[:10])}")
     print(f"\nBy axis:")
     for axis, counts in summary['pattern_counts_by_axis'].items():
@@ -528,7 +740,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="ThoughtGuards LLM-Judge Pipeline (Taxonomy-based)")
     parser.add_argument(
         "--input", "-i",
-        default="output/**/*.json",
+        default="../cot-generator/output/**/*.json",
         help="Glob pattern for input conversation files (default: output/**/*.json)"
     )
     parser.add_argument(
