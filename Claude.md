@@ -351,16 +351,53 @@ npm run verify:seeding          # Verify database seeding
 npm run check:db                # Check database status
 ```
 
-### Deployment
+### Deployment Workflow (IMPORTANT!)
+
+**⚠️ ALWAYS follow this workflow to prevent production issues:**
+We have multiple people working on this project. 
+
 ```bash
+# STEP 1: Make your changes locally
+# ... edit files ...
+
+# STEP 2: Test locally FIRST
+npm run dev:local
+# Open http://localhost:8787 and verify everything works
+
+# STEP 3: Commit to git
+git add .
+git commit -m "Your descriptive commit message"
+
+# STEP 4: Build for production
+npm run build
+
+# STEP 5: Deploy to production
+npx wrangler deploy
+# OR use the deploy script:
 npm run deploy  # Runs scripts/deploy.sh
 
-# Manual steps:
-npm run build
-wrangler deploy
+# STEP 6: Push to git
+git push origin main
 ```
 
-**Important**: [deploy.sh](frontend/scripts/deploy.sh:38-50) does NOT run migrations or seeding to prevent data loss. Run manually when needed.
+**Why This Order Matters:**
+- Testing locally catches bugs before they hit production
+- Committing ensures code is tracked in version control
+- Production should always match what's in git
+- Team members can pull and see the same code that's deployed
+
+**Emergency Hotfix (if you must deploy without local testing):**
+```bash
+# Only use this in emergencies during the hackathon!
+npm run build && npx wrangler deploy
+git add . && git commit -m "Emergency fix: [description]" && git push
+```
+
+**Important Notes:**
+- [deploy.sh](frontend/scripts/deploy.sh:38-50) does NOT run migrations or seeding to prevent data loss
+- Run migrations manually when needed
+- Never deploy uncommitted code (except in emergencies)
+- Always test locally when possible
 
 ---
 
