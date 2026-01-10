@@ -50,10 +50,10 @@ echo "🌱 Seeding database..."
 npm run seed:generate
 wrangler d1 execute thoughtguards-db --file=./db/seed_data.sql
 
-# Deploy to Cloudflare Pages
+# Deploy to Cloudflare Workers
 echo ""
-echo "☁️  Deploying to Cloudflare Pages..."
-wrangler pages deploy dist --project-name=thoughtguards-chatbot
+echo "☁️  Deploying to Cloudflare Workers..."
+wrangler deploy
 
 echo ""
 echo "✅ Deployment complete!"

@@ -24,6 +24,7 @@ import { toolsRoutes } from './routes/tools';
 // Define environment bindings
 export interface Env {
   DB: D1Database;
+  ASSETS: Fetcher;
   GEMINI_API_KEY?: string;
   GOOGLE_API_KEY?: string;
   OPENAI_API_KEY?: string;
@@ -60,6 +61,46 @@ app.route('/api/tools', toolsRoutes);
 // Health check endpoint
 app.get('/api/health', (c) => {
   return c.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// SPA fallback - serve static assets or index.html for client-side routing
+app.get('*', async (c) => {
+  // Get the requested path
+  const url = new URL(c.req.url);
+  const path = url.pathname;
+
+  // Check if ASSETS binding is available
+  if (!c.env.ASSETS) {
+    return c.text('Static assets not configured', 500);
+  }
+
+  try {
+    // Try to fetch the asset (static file or SPA route)
+    const asset = await c.env.ASSETS.fetch(c.req.raw);
+
+    // If asset exists (static file like .js, .css, images), return it
+    if (asset.status === 200) {
+      return asset;
+    }
+
+    // If 404 and not a file extension (SPA route like /dashboard), serve index.html
+    if (asset.status === 404 && !path.match(/\.[a-zA-Z0-9]+$/)) {
+      const indexUrl = new URL('/index.html', c.req.url);
+      const indexAsset = await c.env.ASSETS.fetch(indexUrl);
+
+      // Return index.html with 200 status (not 404) so browser doesn't treat it as error
+      return new Response(indexAsset.body, {
+        status: 200,
+        headers: indexAsset.headers,
+      });
+    }
+
+    // For actual missing files (like missing-image.png), return 404
+    return asset;
+  } catch (error) {
+    console.error('Error serving asset:', error);
+    return c.text('Error loading page', 500);
+  }
 });
 
 // Export the worker
