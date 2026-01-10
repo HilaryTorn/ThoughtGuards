@@ -11,6 +11,7 @@ import ReportCreationModal, { ReportConfig } from './ReportCreationModal';
 import ParameterSweepView from './ParameterSweepView';
 import ReportListView from './ReportListView';
 import { executeReport } from '../lib/reportExecutor';
+import ToolCallEvidence from './ToolCallEvidence';
 
 interface AuditViewProps {
   onResult?: (result: AuditResult, testCase: EnrichedTestCase) => void;
@@ -428,9 +429,52 @@ const AuditView: React.FC<AuditViewProps> = ({ onResult, settings }) => {
         return updated;
       });
 
-      // Save to database
+      // Save to database - derive missing fields
       try {
-        await fetch('/api/audit-results', {
+        // Calculate risk_score and status from overall_score and detected_types
+        const riskScore = result.combined_score || result.overall_score || 0;
+        const hasDetections = (result.detected_types && result.detected_types.length > 0) ||
+                            (result.patterns && result.patterns.length > 0);
+        const status = riskScore >= 0.7 ? 'flagged' : riskScore >= 0.4 ? 'review' : 'clean';
+
+        // Create detection_event from first detection if present
+        let detection_event = null;
+        if (hasDetections && result.detected_types && result.detected_types.length > 0) {
+          const firstDetection = result.detected_types[0];
+          const firstEvidence = firstDetection.evidence?.[0];
+          detection_event = {
+            id: `det_${Date.now()}`,
+            trace_id: testCase.conversation_id,
+            timestamp: new Date().toISOString(),
+            category: firstDetection.category || result.primary_category || 'unknown',
+            pattern_name: firstDetection.type,
+            snippet: firstEvidence?.snippet || '',
+            reason: firstEvidence?.reason || '',
+            turn_number: firstEvidence?.turn_number || 0,
+            severity: firstEvidence?.severity || 'medium',
+            heuristic_score: firstDetection.score || 0,
+            llm_score: result.overall_score,
+            model_name: result.model_name,
+          };
+        }
+
+        // Clean testCase to avoid circular references - only include serializable data
+        const cleanTestCase = {
+          conversation_id: testCase.conversation_id,
+          turns: testCase.turns,
+          metadata: testCase.metadata,
+          reasoning_trace: testCase.reasoning_trace,
+          category: testCase.category,
+          display_type: testCase.display_type,
+        };
+
+        console.log('About to POST audit result:', {
+          audit_id: result.id,
+          trace_id: testCase.conversation_id,
+          conversation_id: result.conversation_id || testCase.conversation_id,
+        });
+
+        const response = await fetch('/api/audit-results', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -441,15 +485,15 @@ const AuditView: React.FC<AuditViewProps> = ({ onResult, settings }) => {
             model_name: result.model_name,
             overall_score: result.overall_score,
             confidence: result.confidence,
-            status: result.status,
-            risk_score: result.risk_score,
+            status,
+            risk_score: riskScore,
             detected_types: result.detected_types,
             metrics: result.metrics,
             recommendations: result.recommendations,
             limitations: result.limitations,
             usage: result.usage,
-            detection_event: result.detection_event,
-            conversation_data: testCase,
+            detection_event,
+            conversation_data: cleanTestCase,
             // Multi-skill fields
             skill_results: result.skill_results,
             combined_score: result.combined_score,
@@ -460,8 +504,16 @@ const AuditView: React.FC<AuditViewProps> = ({ onResult, settings }) => {
             patterns: result.patterns,
           }),
         });
+
+        console.log('POST response status:', response.status);
+        if (!response.ok) {
+          const errorData = await response.json();
+          console.error('Server error response:', errorData);
+        }
       } catch (saveErr) {
         console.error('Failed to save audit result to database:', saveErr);
+        console.error('Error type:', saveErr instanceof Error ? saveErr.constructor.name : typeof saveErr);
+        console.error('Error message:', saveErr instanceof Error ? saveErr.message : String(saveErr));
         // Don't fail the audit if save fails - data is still in UI
       }
 
@@ -1002,11 +1054,11 @@ const AuditView: React.FC<AuditViewProps> = ({ onResult, settings }) => {
                     // Get tool calls and reasoning from the turn if available
                     const enrichedTurn = turn as any;
                     const toolCalls = enrichedTurn.tool_calls || [];
-                    const reasoningContent = enrichedTurn.reasoning_content || 
-                      (selectedTestCase.reasoning_trace && idx === selectedTestCase.turns.length - 1 
-                        ? selectedTestCase.reasoning_trace 
+                    const reasoningContent = enrichedTurn.reasoning_content ||
+                      (selectedTestCase.reasoning_trace && idx === selectedTestCase.turns.length - 1
+                        ? selectedTestCase.reasoning_trace
                         : null);
-                    
+
                     return (
                       <div key={idx} className={`p-3 rounded-lg ${
                         turn.role === 'user' ? 'bg-slate-800/50' : 'bg-slate-800/30'
@@ -1023,6 +1075,23 @@ const AuditView: React.FC<AuditViewProps> = ({ onResult, settings }) => {
                   })}
                 </div>
               </div>
+
+              {/* Tool Call Evidence */}
+              {(() => {
+                const allToolCalls = selectedTestCase.turns.flatMap((turn: any) => turn.tool_calls || []);
+                if (allToolCalls.length === 0) return null;
+
+                return (
+                  <ToolCallEvidence
+                    toolCalls={allToolCalls}
+                    reasoningContent={selectedTestCase.reasoning_trace}
+                    messageContent={selectedTestCase.turns
+                      .filter((t: any) => t.role === 'assistant')
+                      .map((t: any) => t.content)
+                      .join(' ')}
+                  />
+                );
+              })()}
               
               {selectedTestCase.metadata?.tags && selectedTestCase.metadata.tags.length > 0 && (
                 <div>

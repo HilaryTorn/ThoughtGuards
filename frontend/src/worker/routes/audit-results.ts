@@ -234,6 +234,8 @@ auditResultsRoutes.post('/', async (c) => {
 
   try {
     const body = await c.req.json();
+    console.log('Received audit result POST with body keys:', Object.keys(body));
+
     const {
       audit_id,
       trace_id,
@@ -262,8 +264,10 @@ auditResultsRoutes.post('/', async (c) => {
     } = body;
 
     if (!audit_id || !trace_id || !conversation_id) {
+      console.error('Missing required fields:', { audit_id, trace_id, conversation_id });
       return c.json({
-        error: 'Missing required fields: audit_id, trace_id, conversation_id'
+        error: 'Missing required fields: audit_id, trace_id, conversation_id',
+        received: { audit_id, trace_id, conversation_id }
       }, 400);
     }
 
@@ -278,7 +282,15 @@ auditResultsRoutes.post('/', async (c) => {
     const scoreCiLower = statistics?.confidenceInterval?.lower;
     const scoreCiUpper = statistics?.confidenceInterval?.upper;
 
-    await db.prepare(`
+    console.log('Attempting to insert with values:', {
+      audit_id,
+      trace_id,
+      conversation_id,
+      skill_id: skill_id || '',
+      model_name: model_name || '',
+    });
+
+    const result = await db.prepare(`
       INSERT OR REPLACE INTO audit_results (
         audit_id, trace_id, conversation_id, skill_id, model_name,
         overall_score, confidence, status, risk_score,
@@ -323,10 +335,17 @@ auditResultsRoutes.post('/', async (c) => {
       now
     ).run();
 
+    console.log('Insert successful, result:', result);
     return c.json({ success: true, audit_id, trace_id }, 201);
   } catch (error: any) {
     console.error('Error creating audit result:', error);
-    return c.json({ error: error.message || 'Failed to create audit result' }, 500);
+    console.error('Error stack:', error.stack);
+    console.error('Error cause:', error.cause);
+    return c.json({
+      error: error.message || 'Failed to create audit result',
+      details: error.stack,
+      cause: error.cause
+    }, 500);
   }
 });
 
