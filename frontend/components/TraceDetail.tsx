@@ -60,7 +60,33 @@ const TraceDetail: React.FC<TraceDetailProps> = ({ trace, onBack, onAction }) =>
   }, [trace.conversationId, conversationWithTools]);
 
   // Use actual conversation without mock padding
-  const displayConversation: Message[] = trace.conversation;
+  // Priority 1: Use fresh data from API if available
+  // Priority 2: Fall back to trace.conversation
+  const displayConversation: Message[] = React.useMemo(() => {
+    if (conversationWithTools?.turns) {
+      // Convert turns to Message format
+      return conversationWithTools.turns.flatMap((turn: any) => {
+        const messages: Message[] = [];
+        if (turn.role === 'customer' || turn.role === 'user') {
+          messages.push({
+            role: 'user',
+            content: turn.content,
+            reasoning_trace: turn.reasoning_content || undefined,
+            tool_calls: turn.tool_calls || undefined
+          });
+        } else if (turn.role === 'assistant') {
+          messages.push({
+            role: 'assistant',
+            content: turn.content,
+            reasoning_trace: turn.reasoning_content || undefined,
+            tool_calls: turn.tool_calls || undefined
+          });
+        }
+        return messages;
+      });
+    }
+    return trace.conversation;
+  }, [conversationWithTools, trace.conversation]);
 
   // Collect all tool calls from conversation - prioritize fresh API data
   const allToolCalls = React.useMemo(() => {

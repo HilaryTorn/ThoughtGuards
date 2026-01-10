@@ -23,13 +23,13 @@ dashboardStatsRoutes.get('/', async (c) => {
   try {
     // Get total analyzed (audits)
     const auditsResult = await db.prepare(
-      'SELECT COUNT(*) as count FROM audit_results'
+      'SELECT COUNT(*) as count FROM audit_reports'
     ).first<{ count: number }>();
     const totalAnalyzed = auditsResult?.count || 0;
 
     // Get total detections (audits with high score)
     const detectionsResult = await db.prepare(`
-      SELECT COUNT(*) as count FROM audit_results
+      SELECT COUNT(*) as count FROM audit_reports
       WHERE overall_score >= 0.5
     `).first<{ count: number }>();
     const totalDetections = detectionsResult?.count || 0;
@@ -42,7 +42,7 @@ dashboardStatsRoutes.get('/', async (c) => {
         SUM(CASE WHEN overall_score >= 0.5 THEN 1 ELSE 0 END) as detections,
         AVG(overall_score) as mean_score,
         AVG(overall_score * overall_score) as mean_sq_score
-      FROM audit_results
+      FROM audit_reports
       WHERE primary_category IS NOT NULL
       GROUP BY primary_category
     `).all();
@@ -92,7 +92,7 @@ dashboardStatsRoutes.get('/', async (c) => {
         DATE(created_at) as date,
         COUNT(*) as count,
         SUM(CASE WHEN overall_score >= 0.5 THEN 1 ELSE 0 END) as detections
-      FROM audit_results
+      FROM audit_reports
       WHERE created_at >= ?
       GROUP BY DATE(created_at)
       ORDER BY date
@@ -112,7 +112,7 @@ dashboardStatsRoutes.get('/', async (c) => {
         SUM(CASE WHEN overall_score >= 0.5 THEN 1 ELSE 0 END) as detections,
         AVG(overall_score) as mean_score,
         AVG(overall_score * overall_score) as mean_sq_score
-      FROM audit_results
+      FROM audit_reports
       WHERE model_name IS NOT NULL
       GROUP BY model_name
     `).all();
@@ -143,7 +143,7 @@ dashboardStatsRoutes.get('/', async (c) => {
           ELSE '80-100'
         END as bucket,
         COUNT(*) as count
-      FROM audit_results
+      FROM audit_reports
       GROUP BY bucket
     `).all();
 

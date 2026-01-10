@@ -429,37 +429,27 @@ const AuditView: React.FC<AuditViewProps> = ({ onResult, settings }) => {
         return updated;
       });
 
-      // Save to database - derive missing fields
+      // Save to database - map to audit_reports schema
       try {
-        // Calculate risk_score and status from overall_score and detected_types
-        const riskScore = result.combined_score || result.overall_score || 0;
-        const hasDetections = (result.detected_types && result.detected_types.length > 0) ||
-                            (result.patterns && result.patterns.length > 0);
-        const status = riskScore >= 0.7 ? 'flagged' : riskScore >= 0.4 ? 'review' : 'clean';
+        // Generate hashes for deduplication and tracking
+        const generateHash = (content: string): string => {
+          // Simple hash generation (in production, use crypto.subtle)
+          let hash = 0;
+          for (let i = 0; i < content.length; i++) {
+            const char = content.charCodeAt(i);
+            hash = ((hash << 5) - hash) + char;
+            hash = hash & hash; // Convert to 32-bit integer
+          }
+          return Math.abs(hash).toString(16).padStart(16, '0');
+        };
 
-        // Create detection_event from first detection if present
-        let detection_event = null;
-        if (hasDetections && result.detected_types && result.detected_types.length > 0) {
-          const firstDetection = result.detected_types[0];
-          const firstEvidence = firstDetection.evidence?.[0];
-          detection_event = {
-            id: `det_${Date.now()}`,
-            trace_id: testCase.conversation_id,
-            timestamp: new Date().toISOString(),
-            category: firstDetection.category || result.primary_category || 'unknown',
-            pattern_name: firstDetection.type,
-            snippet: firstEvidence?.snippet || '',
-            reason: firstEvidence?.reason || '',
-            turn_number: firstEvidence?.turn_number || 0,
-            severity: firstEvidence?.severity || 'medium',
-            heuristic_score: firstDetection.score || 0,
-            llm_score: result.overall_score,
-            model_name: result.model_name,
-          };
-        }
+        const now = new Date().toISOString();
+        const promptHash = generateHash(`${result.skill_id}-${result.model_name}-${now.substring(0, 10)}`);
+        const patterns = (result as any).patterns;
+        const responseHash = generateHash(JSON.stringify(patterns || result.detected_types || {}));
 
         // Clean testCase to avoid circular references - only include serializable data
-        const cleanTestCase = {
+        const conversationSnapshot = {
           conversation_id: testCase.conversation_id,
           turns: testCase.turns,
           metadata: testCase.metadata,
@@ -468,48 +458,79 @@ const AuditView: React.FC<AuditViewProps> = ({ onResult, settings }) => {
           display_type: testCase.display_type,
         };
 
-        console.log('About to POST audit result:', {
-          audit_id: result.id,
-          trace_id: testCase.conversation_id,
+        // Build audit report in new format
+        const auditReport = {
+          report_id: result.id,
           conversation_id: result.conversation_id || testCase.conversation_id,
+          created_at: now,
+          created_by: null,
+          execution_duration_ms: null,
+          skill_id: result.skill_id,
+          skill_version: '1.0.0', // Default version
+          model_name: result.model_name,
+          model_version: null,
+          llm_parameters: {
+            temperature: null,
+            top_p: null,
+            seed: null
+          },
+          prompt_hash: promptHash,
+          prompt_version: 'v1.0',
+          timestamp_utc: now,
+          system_fingerprint: null,
+          response_hash: responseHash,
+          completion_tokens: result.usage?.candidates_tokens || 0,
+          prompt_tokens: result.usage?.prompt_tokens || 0,
+          cached_tokens: 0,
+          latency_ms: null,
+          finish_reason: null,
+          cache_hit: false,
+          evaluator_model: result.model_name,
+          evaluation_seed: null,
+          evaluation_prompt_version: null,
+          position_variant: null,
+          prompt_patch_id: null,
+          cache_key: null,
+          overall_score: result.overall_score,
+          confidence: result.confidence,
+          detected_types: result.detected_types || [],
+          metrics: result.metrics || {},
+          recommendations: result.recommendations || [],
+          limitations: result.limitations || [],
+          usage: result.usage || undefined,
+          skill_results: result.skill_results || null,
+          combined_score: result.combined_score || null,
+          primary_category: result.primary_category || null,
+          secondary_categories: result.secondary_categories || null,
+          detection_metadata: result.detection_metadata || null,
+          patterns: patterns || null,
+          conversation_snapshot: conversationSnapshot,
+          tags: null,
+          notes: null,
+          error_message: null
+        };
+
+        console.log('About to POST audit report:', {
+          report_id: auditReport.report_id,
+          conversation_id: auditReport.conversation_id,
+          skill_id: auditReport.skill_id,
         });
 
-        const response = await fetch('/api/audit-results', {
+        const response = await fetch('/api/audit-reports', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            audit_id: result.id,
-            trace_id: testCase.conversation_id,
-            conversation_id: result.conversation_id || testCase.conversation_id,
-            skill_id: result.skill_id,
-            model_name: result.model_name,
-            overall_score: result.overall_score,
-            confidence: result.confidence,
-            status,
-            risk_score: riskScore,
-            detected_types: result.detected_types,
-            metrics: result.metrics,
-            recommendations: result.recommendations,
-            limitations: result.limitations,
-            usage: result.usage,
-            detection_event,
-            conversation_data: cleanTestCase,
-            // Multi-skill fields
-            skill_results: result.skill_results,
-            combined_score: result.combined_score,
-            primary_category: result.primary_category,
-            secondary_categories: result.secondary_categories,
-            detection_metadata: result.detection_metadata,
-            // Taxonomy patterns
-            patterns: result.patterns,
-          }),
+          body: JSON.stringify(auditReport),
         });
 
         console.log('POST response status:', response.status);
         if (!response.ok) {
-          const errorData = await response.json();
-          console.error('Server error response:', errorData);
+          const errorText = await response.text();
+          console.error('Server error response:', errorText);
+          throw new Error(`Failed to save audit: ${response.status} ${errorText}`);
         }
+
+        const responseData = await response.json();
+        console.log('Audit saved successfully:', responseData);
       } catch (saveErr) {
         console.error('Failed to save audit result to database:', saveErr);
         console.error('Error type:', saveErr instanceof Error ? saveErr.constructor.name : typeof saveErr);

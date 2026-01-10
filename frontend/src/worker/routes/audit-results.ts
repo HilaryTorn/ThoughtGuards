@@ -74,7 +74,7 @@ auditResultsRoutes.get('/', async (c) => {
   const status = c.req.query('status');
 
   try {
-    let query = 'SELECT * FROM audit_results WHERE 1=1';
+    let query = 'SELECT * FROM audit_reports WHERE 1=1';
     const params: any[] = [];
 
     if (conversationId) {
@@ -109,15 +109,20 @@ auditResultsRoutes.get('/', async (c) => {
 
     // Parse JSON fields and convert to camelCase format expected by frontend
     const traces = (result.results || []).map((row: any) => ({
-      id: row.trace_id,
+      id: row.report_id || row.trace_id,
       timestamp: row.created_at ? new Date(row.created_at).toLocaleTimeString() : 'N/A',
-      messageCount: row.conversation_data ? JSON.parse(row.conversation_data).length : 0,
-      status: row.status || 'clean',
-      riskScore: row.risk_score || 0,
-      detectionEvent: row.detection_event ? JSON.parse(row.detection_event) : undefined,
-      conversation: row.conversation_data ? JSON.parse(row.conversation_data) : [],
+      messageCount: row.conversation_snapshot ? JSON.parse(row.conversation_snapshot).length : 0,
+      status: row.overall_score >= 0.5 ? 'suspicious' : 'clean',
+      riskScore: row.overall_score * 100 || 0,
+      detectionEvent: row.overall_score >= 0.5 ? {
+        category: row.primary_category || 'Unknown',
+        timestamp: row.created_at,
+        context: `Skill: ${row.skill_id}`,
+        severity: 'high'
+      } : undefined,
+      conversation: row.conversation_snapshot ? JSON.parse(row.conversation_snapshot) : [],
       // Audit metadata
-      auditId: row.audit_id,
+      auditId: row.report_id,
       conversationId: row.conversation_id,
       skillId: row.skill_id || '',
       modelName: row.model_name || '',
@@ -125,8 +130,8 @@ auditResultsRoutes.get('/', async (c) => {
       confidence: row.confidence || 'low',
       detectedTypes: row.detected_types ? JSON.parse(row.detected_types) : [],
       metrics: row.metrics ? JSON.parse(row.metrics) : {},
-      recommendations: row.recommendations ? JSON.parse(row.recommendations) : [],
-      limitations: row.limitations ? JSON.parse(row.limitations) : [],
+      recommendations: [], // audit_reports doesn't have this field
+      limitations: [], // audit_reports doesn't have this field
       usage: row.usage ? JSON.parse(row.usage) : undefined,
       // Multi-skill fields
       skillResults: row.skill_results ? JSON.parse(row.skill_results) : undefined,

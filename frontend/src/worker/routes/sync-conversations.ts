@@ -245,11 +245,13 @@ async function performSync(
         }
 
         const conversations = parseConversationData(data, file.path);
-        if (conversations.length > 0) {
-          allConversations.push(...conversations);
+        // Filter out conversations with no turns
+        const validConversations = conversations.filter(c => c.turns && c.turns.length > 0);
+        if (validConversations.length > 0) {
+          allConversations.push(...validConversations);
           successfulFiles.push(file.path);
         } else {
-          failedFiles.push({ path: file.path, reason: 'No conversations found in file' });
+          failedFiles.push({ path: file.path, reason: 'No valid conversations with turns found in file' });
         }
 
         if (syncLock.progress) {

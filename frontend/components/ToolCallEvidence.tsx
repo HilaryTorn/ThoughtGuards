@@ -39,6 +39,7 @@ const ToolCallEvidence: React.FC<ToolCallEvidenceProps> = ({
   reasoningContent,
   messageContent
 }) => {
+  const [isPanelExpanded, setIsPanelExpanded] = useState(false);
   const [expandedExecutions, setExpandedExecutions] = useState<Set<string>>(new Set());
 
   if (toolCalls.length === 0) {
@@ -218,20 +219,40 @@ const ToolCallEvidence: React.FC<ToolCallEvidenceProps> = ({
 
   return (
     <div className="bg-slate-900/50 border border-slate-800 rounded-xl overflow-hidden">
-      {/* Header */}
-      <div className="p-5 border-b border-slate-800 bg-slate-900/70">
-        <div className="flex items-center gap-2 mb-1">
+      {/* Header - Clickable */}
+      <button
+        onClick={() => setIsPanelExpanded(!isPanelExpanded)}
+        className="w-full flex items-center gap-2 p-5 border-b border-slate-800 bg-slate-900/70 hover:bg-slate-900 transition-colors"
+      >
+        <div className="flex items-center gap-2 flex-1">
+          {isPanelExpanded ? (
+            <ChevronDown size={14} className="text-slate-400" />
+          ) : (
+            <ChevronRight size={14} className="text-slate-400" />
+          )}
           <Wrench size={16} className="text-cyan-500" />
           <h3 className="text-sm font-semibold text-slate-100">
             Tool Execution Evidence
           </h3>
         </div>
-        <p className="text-xs text-slate-400">
-          Verification of actual tool calls vs. model claims
-        </p>
-      </div>
 
-      <div className="p-5 space-y-4">
+        {!isPanelExpanded && (
+          <div className="flex items-center gap-3 text-xs">
+            {discrepancies.length > 0 && (
+              <div className="flex items-center gap-1.5 text-orange-400">
+                <AlertTriangle size={14} />
+                <span>{discrepancies.length} Discrepanc{discrepancies.length !== 1 ? 'ies' : 'y'}</span>
+              </div>
+            )}
+            <span className="text-slate-400">
+              {executions.length} tool{executions.length !== 1 ? 's' : ''}, {toolCalls.length} call{toolCalls.length !== 1 ? 's' : ''}
+            </span>
+          </div>
+        )}
+      </button>
+
+      {isPanelExpanded && (
+        <div className="p-5 space-y-4 overflow-y-auto max-h-[600px]">
         {/* Discrepancies Section */}
         {discrepancies.length > 0 && (
           <div className="space-y-2">
@@ -374,7 +395,8 @@ const ToolCallEvidence: React.FC<ToolCallEvidenceProps> = ({
             </span>
           </div>
         )}
-      </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -34,11 +34,11 @@ const App: React.FC = () => {
   const [traces, setTraces] = useState<Trace[]>([]);
   const [tracesLoaded, setTracesLoaded] = useState(false);
 
-  // Load conversations from database on mount
+  // Load audited conversations from database on mount
   useEffect(() => {
     const loadTraces = async () => {
       try {
-        const response = await fetch('/api/conversations?limit=1000');
+        const response = await fetch('/api/audit-results');
         if (response.ok) {
           const data = await response.json() as { conversations?: any[]; results?: any[] };
           const rawConversations = data.conversations || data.results || [];
