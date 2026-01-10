@@ -67,9 +67,11 @@ function findJsonFiles(dir: string): string[] {
   for (const entry of entries) {
     const fullPath = path.join(dir, entry.name);
 
-    if (entry.isDirectory()) {
-      files.push(...findJsonFiles(fullPath));
-    } else if (entry.isFile() && entry.name.endsWith('.json')) {
+    // Skip subdirectories (comment out to enable recursive scanning)
+    // if (entry.isDirectory()) {
+    //   files.push(...findJsonFiles(fullPath));
+    // } else
+    if (entry.isFile() && entry.name.endsWith('.json')) {
       files.push(fullPath);
     }
   }
