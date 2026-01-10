@@ -7,55 +7,14 @@ import type { Env } from '../index';
 
 export const auditResultsRoutes = new Hono<{ Bindings: Env }>();
 
-// Ensure audit_results table exists with full schema
+// Ensure audit_reports table exists (should be created via migrations)
 async function ensureTableExists(db: D1Database) {
   try {
-    await db.prepare('SELECT 1 FROM audit_results LIMIT 1').first();
+    await db.prepare('SELECT 1 FROM audit_reports LIMIT 1').first();
   } catch (error: any) {
     if (error.message?.includes('no such table')) {
-      // Create the table with full schema
-      await db.prepare(`
-        CREATE TABLE IF NOT EXISTS audit_results (
-          audit_id TEXT PRIMARY KEY,
-          trace_id TEXT NOT NULL UNIQUE,
-          conversation_id TEXT NOT NULL,
-          skill_id TEXT NOT NULL,
-          model_name TEXT NOT NULL,
-          overall_score REAL NOT NULL,
-          confidence TEXT NOT NULL,
-          status TEXT NOT NULL,
-          risk_score REAL NOT NULL,
-          detected_types TEXT,
-          metrics TEXT,
-          recommendations TEXT,
-          limitations TEXT,
-          usage TEXT,
-          detection_event TEXT,
-          conversation_data TEXT NOT NULL,
-          created_at TEXT NOT NULL,
-          updated_at TEXT NOT NULL,
-          skill_results TEXT,
-          combined_score REAL,
-          primary_category TEXT,
-          secondary_categories TEXT,
-          detection_metadata TEXT,
-          patterns TEXT,
-          run_count INTEGER DEFAULT 1,
-          score_mean REAL,
-          score_stddev REAL,
-          score_p5 REAL,
-          score_p50 REAL,
-          score_p95 REAL,
-          score_ci_lower REAL,
-          score_ci_upper REAL,
-          calibration_metrics TEXT,
-          raw_response TEXT,
-          FOREIGN KEY (conversation_id) REFERENCES conversations(conversation_id)
-        )
-      `).run();
-      await db.prepare('CREATE INDEX IF NOT EXISTS idx_audit_results_conversation_id ON audit_results(conversation_id)').run();
-      await db.prepare('CREATE INDEX IF NOT EXISTS idx_audit_results_trace_id ON audit_results(trace_id)').run();
-      await db.prepare('CREATE INDEX IF NOT EXISTS idx_audit_results_created_at ON audit_results(created_at)').run();
+      console.error('audit_reports table does not exist! Run migrations: npm run migrate:local');
+      throw new Error('audit_reports table missing - run database migrations');
     }
   }
 }
@@ -163,7 +122,7 @@ auditResultsRoutes.get('/', async (c) => {
     }));
 
     // Get total count
-    let countQuery = 'SELECT COUNT(*) as count FROM audit_results WHERE 1=1';
+    let countQuery = 'SELECT COUNT(*) as count FROM audit_reports WHERE 1=1';
     const countParams: any[] = [];
 
     if (conversationId) {

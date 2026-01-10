@@ -336,7 +336,8 @@ CREATE TABLE IF NOT EXISTS audit_reports (
     primary_category TEXT,
     secondary_categories TEXT,
     detection_metadata TEXT,
-    
+    patterns TEXT,  -- JSON: Taxonomy triad patterns from taxonomy-auditor
+
     -- Full conversation data at time of report
     conversation_snapshot TEXT NOT NULL,  -- JSON: Full conversation state
     
