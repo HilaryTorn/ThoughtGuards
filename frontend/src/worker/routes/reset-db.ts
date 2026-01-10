@@ -9,11 +9,20 @@ export const resetDbRoutes = new Hono<{ Bindings: Env }>();
 
 // Reset database
 resetDbRoutes.post('/', async (c) => {
+  // Require authorization header to prevent accidental resets
+  const authHeader = c.req.header('X-Reset-Authorization');
+  const expectedToken = c.env.RESET_DB_TOKEN || 'CHANGE_ME_IN_PRODUCTION';
+
+  if (authHeader !== expectedToken) {
+    console.warn('[Reset DB] Unauthorized reset attempt blocked');
+    return c.json({ error: 'Unauthorized. Set X-Reset-Authorization header.' }, 401);
+  }
+
   const db = c.env.DB;
   const reseed = c.req.query('reseed') === 'true';
 
   try {
-    console.log('[Reset DB] Starting database reset...');
+    console.log('[Reset DB] Starting authorized database reset...');
 
     // Get list of all tables
     const tablesResult = await db.prepare(`

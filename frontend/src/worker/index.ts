@@ -31,6 +31,7 @@ export interface Env {
   ANTHROPIC_API_KEY?: string;
   DEEPSEEK_API_KEY?: string;
   QWEN_API_KEY?: string;
+  RESET_DB_TOKEN?: string;
 }
 
 // Create Hono app with bindings type

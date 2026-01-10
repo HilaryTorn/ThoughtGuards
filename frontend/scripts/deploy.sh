@@ -35,14 +35,19 @@ fi
 echo "📦 Building frontend..."
 npm run build
 
+# NOTE: Database migrations commented out to prevent data loss on deployment
+# Migrations should be run manually when needed:
+#   wrangler d1 execute thoughtguards-db --file=./db/migrations/001_initial.sql
+#   wrangler d1 execute thoughtguards-db --file=./db/migrations/002_add_audit_results.sql
+#
 # Apply database migrations
-echo ""
-echo "🗄️  Applying database migrations..."
-if [ -f "db/migrations/001_initial.sql" ]; then
-    wrangler d1 execute thoughtguards-db --file=./db/migrations/001_initial.sql
-else
-    echo "⚠️  No migration file found, skipping..."
-fi
+# echo ""
+# echo "🗄️  Applying database migrations..."
+# if [ -f "db/migrations/001_initial.sql" ]; then
+#     wrangler d1 execute thoughtguards-db --file=./db/migrations/001_initial.sql
+# else
+#     echo "⚠️  No migration file found, skipping..."
+# fi
 
 # NOTE: Database seeding removed to prevent data loss on deployment
 # To seed the database manually, run:
