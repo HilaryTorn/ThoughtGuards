@@ -151,7 +151,7 @@ export interface ChartDataPoint {
 }
 
 // Renamed views to match new requirements
-export type AppView = 'landing' | 'dashboard' | 'traces' | 'settings' | 'audit';
+export type AppView = 'landing' | 'dashboard' | 'traces' | 'settings' | 'audit' | 'red-team-lab';
 
 export interface AppSettings {
   categories: Record<DetectionCategory, boolean>;

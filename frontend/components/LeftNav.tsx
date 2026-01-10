@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { LayoutDashboard, List, Settings, FileText } from 'lucide-react';
+import { LayoutDashboard, List, Settings, FileText, Zap } from 'lucide-react';
 import { AppView } from '../types';
 
 interface LeftNavProps {
@@ -13,6 +13,7 @@ const LeftNav: React.FC<LeftNavProps> = ({ currentView, onNavigate }) => {
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
     { id: 'traces', label: 'Traces', icon: List, path: '/traces' },
     { id: 'audit', label: 'Queue', icon: FileText, path: '/queue' },
+    { id: 'red-team-lab', label: 'Red Team Lab', icon: Zap, path: '/red-team-lab' },
     { id: 'settings', label: 'Settings', icon: Settings, path: '/settings' },
   ] as const;
 

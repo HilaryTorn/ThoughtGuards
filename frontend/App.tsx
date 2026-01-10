@@ -11,6 +11,7 @@ import Settings from './components/Settings';
 import AuditView from './components/AuditView';
 import DynamicDashboard from './components/DynamicDashboard';
 import Landing from './components/Landing';
+import RedTeamLab from './components/RedTeamLab';
 import { AuditResult } from './lib/types';
 import { CATEGORY_TO_SKILL, AVAILABLE_SKILLS } from './lib/skillsRegistry';
 
@@ -111,6 +112,7 @@ const App: React.FC = () => {
     if (path === '/dashboard') return 'dashboard';
     if (path.startsWith('/traces')) return 'traces';
     if (path === '/queue') return 'audit';
+    if (path === '/red-team-lab') return 'red-team-lab';
     if (path.startsWith('/settings')) return 'settings';
     return 'dashboard';
   };
@@ -173,6 +175,7 @@ const App: React.FC = () => {
       'dashboard': '/dashboard',
       'traces': '/traces',
       'audit': '/queue',
+      'red-team-lab': '/red-team-lab',
       'settings': '/settings',
     };
     if (routeMap[view]) {
@@ -590,14 +593,18 @@ const App: React.FC = () => {
     if (currentView === 'traces') {
       if (selectedTrace) {
         return (
-          <TraceDetail 
-            trace={selectedTrace} 
-            onBack={handleBackToTraceList} 
+          <TraceDetail
+            trace={selectedTrace}
+            onBack={handleBackToTraceList}
             onAction={handleTraceAction}
           />
         );
       }
       return <TraceList traces={traces} onSelectTrace={handleSelectTraceFromList} />;
+    }
+
+    if (currentView === 'red-team-lab') {
+      return <RedTeamLab onNavigateToQueue={() => handleNavigate('audit')} />;
     }
 
     // Default: Dashboard View
@@ -610,6 +617,7 @@ const App: React.FC = () => {
     if (currentView === 'dashboard') return 'Live Monitoring Dashboard';
     if (currentView === 'traces') return selectedTrace ? `Investigation: ${selectedTrace.id}` : 'Trace History';
     if (currentView === 'audit') return 'Detection Queue';
+    if (currentView === 'red-team-lab') return 'Red Team Lab';
     if (currentView === 'settings') return 'System Settings';
     return '';
   };
@@ -667,7 +675,7 @@ const App: React.FC = () => {
         </header>
 
         {/* Page Content */}
-        <main className="max-w-7xl mx-auto px-6 py-8">
+        <main className={`${currentView === 'red-team-lab' ? '' : 'max-w-7xl mx-auto px-6 py-8'}`}>
           {renderContent()}
         </main>
 
