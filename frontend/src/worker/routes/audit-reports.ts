@@ -132,8 +132,8 @@ auditReportsRoutes.post('/', async (c) => {
         overall_score, confidence, detected_types, metrics,
         recommendations, limitations, usage,
         skill_results, combined_score, primary_category, secondary_categories,
-        detection_metadata, conversation_snapshot, tags, notes, error_message
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        detection_metadata, patterns, conversation_snapshot, tags, notes, error_message
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
       report.report_id,
       report.conversation_id,
@@ -174,6 +174,7 @@ auditReportsRoutes.post('/', async (c) => {
       report.primary_category || null,
       report.secondary_categories ? JSON.stringify(report.secondary_categories) : null,
       report.detection_metadata ? JSON.stringify(report.detection_metadata) : null,
+      report.patterns ? JSON.stringify(report.patterns) : null,
       JSON.stringify(report.conversation_snapshot),
       report.tags ? JSON.stringify(report.tags) : null,
       report.notes || null,
@@ -280,6 +281,7 @@ function convertDbRowToReport(row: any): any {
     primary_category: row.primary_category || undefined,
     secondary_categories: row.secondary_categories ? JSON.parse(row.secondary_categories) : undefined,
     detection_metadata: row.detection_metadata ? JSON.parse(row.detection_metadata) : undefined,
+    patterns: row.patterns ? JSON.parse(row.patterns) : undefined,
     conversation_snapshot: row.conversation_snapshot ? JSON.parse(row.conversation_snapshot) : {},
     tags: row.tags ? JSON.parse(row.tags) : undefined,
     notes: row.notes || undefined,
