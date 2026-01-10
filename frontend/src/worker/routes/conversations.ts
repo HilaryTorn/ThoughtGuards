@@ -158,9 +158,10 @@ conversationsRoutes.get('/:conversationId', async (c) => {
       return {
         ...turn,
         tool_calls: (toolCallsResult.results || []).map((tc: any) => ({
-          ...tc,
+          tool: tc.tool_name,
           arguments: tc.arguments ? JSON.parse(tc.arguments) : {},
-          result: tc.result ? JSON.parse(tc.result) : {}
+          result: tc.result ? JSON.parse(tc.result) : null,
+          timestamp: tc.timestamp,
         }))
       };
     }));
@@ -194,6 +195,17 @@ conversationsRoutes.post('/', async (c) => {
     }
 
     const now = new Date().toISOString();
+
+    // Auto-create customer if doesn't exist (hackathon fix for foreign key constraint)
+    await db.prepare(`
+      INSERT OR IGNORE INTO customers (customer_id, name, email, member_since, lifetime_value, total_orders, total_returns, return_rate)
+      VALUES (?, ?, ?, ?, 0, 0, 0, 0)
+    `).bind(
+      customer_id,
+      `Customer ${customer_id}`,
+      `${customer_id}@example.com`,
+      now
+    ).run();
 
     await db.prepare(`
       INSERT OR IGNORE INTO conversations (

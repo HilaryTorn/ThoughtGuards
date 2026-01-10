@@ -25,6 +25,9 @@ interface TraceDetailProps {
 }
 
 const TraceDetail: React.FC<TraceDetailProps> = ({ trace, onBack, onAction }) => {
+  const [conversationWithTools, setConversationWithTools] = React.useState<any>(null);
+  const [loading, setLoading] = React.useState(false);
+
   if (!trace) return null;
 
   const event = trace.detectionEvent;
@@ -34,11 +37,41 @@ const TraceDetail: React.FC<TraceDetailProps> = ({ trace, onBack, onAction }) =>
   const normalizedCategory = event ? normalizeCategory(event.category) : null;
   const catStyle = normalizedCategory ? CATEGORY_STYLES[normalizedCategory] : null;
 
+  // Fetch full conversation with tool_calls if we have a conversation_id
+  React.useEffect(() => {
+    const fetchConversationWithTools = async () => {
+      if (!trace.conversationId || conversationWithTools) return;
+
+      setLoading(true);
+      try {
+        const response = await fetch(`/api/conversations/${trace.conversationId}`);
+        if (response.ok) {
+          const data = await response.json();
+          setConversationWithTools(data);
+        }
+      } catch (error) {
+        console.error('Failed to fetch conversation with tools:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchConversationWithTools();
+  }, [trace.conversationId, conversationWithTools]);
+
   // Use actual conversation without mock padding
   const displayConversation: Message[] = trace.conversation;
 
-  // Collect all tool calls from conversation
-  const allToolCalls = displayConversation.flatMap((msg: any) => msg.tool_calls || []);
+  // Collect all tool calls from conversation - prioritize fresh API data
+  const allToolCalls = React.useMemo(() => {
+    // Priority 1: Use fresh data from API if available
+    if (conversationWithTools?.turns) {
+      return conversationWithTools.turns.flatMap((turn: any) => turn.tool_calls || []);
+    }
+
+    // Priority 2: Use displayConversation (which now has tool_calls field in Message type)
+    return displayConversation.flatMap((msg) => msg.tool_calls || []);
+  }, [conversationWithTools, displayConversation]);
 
   // Shorten trace ID for display (show last 8 chars if it's a long ID)
   const shortTraceId = trace.id.length > 12 ? `...${trace.id.slice(-8)}` : trace.id;
