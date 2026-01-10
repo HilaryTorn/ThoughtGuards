@@ -1,13 +1,5 @@
 -- Migration: Add audit_results table and related tables
--- This drops and recreates tables that may have schema conflicts
-
--- Drop existing tables if they exist (in order due to foreign keys)
-DROP TABLE IF EXISTS audit_runs;
-DROP TABLE IF EXISTS audit_results;
-DROP TABLE IF EXISTS ground_truth_labels;
-DROP TABLE IF EXISTS aggregate_reports;
-DROP TABLE IF EXISTS report_cache;
-DROP TABLE IF EXISTS sync_status;
+-- SAFE MIGRATION: Creates tables only if they don't exist (preserves existing data)
 
 -- Sync status table
 CREATE TABLE IF NOT EXISTS sync_status (
