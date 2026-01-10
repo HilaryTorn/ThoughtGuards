@@ -2,6 +2,8 @@
 
 ## Project Overview
 
+We are building this project for the AI Manipulation Hackathon with Apart Research. We have 2 days to build this! 
+
 ThoughtGuards is an AI safety research project that monitors and detects manipulation in AI chain-of-thought (CoT) reasoning. It's built as a full-stack web application for analyzing conversations between AI agents and users, specifically focusing on detecting deceptive or manipulative patterns in AI reasoning traces from e-commerce chatbot scenarios.
 
 **Primary Use Case**: Detect and categorize manipulation patterns in AI-generated reasoning traces (e.g., reward hacking, sycophancy, sandbagging, deception) using a structured taxonomy framework.
