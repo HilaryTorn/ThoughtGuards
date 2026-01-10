@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ChevronDown, ChevronUp, MessageSquare, ExternalLink, BrainCircuit, Target, VenetianMask, Gift, Bomb, CloudFog, Tent, LucideIcon, Check, Minus, Crosshair, Cog, Users } from 'lucide-react';
+import { ChevronDown, ChevronUp, MessageSquare, ExternalLink, BrainCircuit, AlertCircle, TrendingDown, Glasses, Megaphone, Lock, Zap, LucideIcon, Check, Minus, Crosshair, Cog, Users } from 'lucide-react';
 import { DetectionEvent, DetectionCategory, WHYCode, HOWCode, TARGETCode } from '../types';
 import { CATEGORY_STYLES, WHY_VERBS, HOW_VERBS, TARGET_VERBS, LEGACY_CATEGORY_MAP } from '../constants';
 
@@ -15,12 +15,12 @@ function normalizeCategory(category: string): DetectionCategory {
 }
 
 const Icons: Record<string, LucideIcon> = {
-  Target,
-  VenetianMask,
-  Gift,
-  Bomb,
-  CloudFog,
-  Tent
+  AlertCircle,
+  TrendingDown,
+  Glasses,
+  Megaphone,
+  Lock,
+  Zap
 };
 
 interface DetectionCardProps {

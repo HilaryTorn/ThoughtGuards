@@ -1,5 +1,5 @@
 import { DetectionEvent, CategoryStyle, DetectionCategory, Trace, TraceStatus, Message, WHYCode, TARGETCode, HOWCode } from './types';
-import { Target, VenetianMask, Gift, Bomb, CloudFog, Tent } from 'lucide-react';
+import { AlertCircle, TrendingDown, Glasses, Megaphone, Lock, Zap } from 'lucide-react';
 
 // WHY axis lookup (W1-W4): What signal is the behavior optimizing?
 export const WHY_VERBS: Record<WHYCode, { verb: string; name: string; description: string }> = {
@@ -27,49 +27,49 @@ export const TARGET_VERBS: Record<TARGETCode, { verb: string; name: string; desc
   'T4': { verb: 'External', name: 'External World/Third Parties', description: 'Unauthorized/deceptive external actions' },
 };
 
-// Category styles with new HOW verb names (keeping same colors/icons)
+// Category styles with new HOW verb names and updated icons
 export const CATEGORY_STYLES: Record<DetectionCategory, CategoryStyle> = {
   'Fabricated': {
     label: 'Fabricated',
     color: 'text-red-400',
     borderColor: 'border-red-500/50',
     bgColor: 'bg-red-500/10',
-    icon: 'VenetianMask'
+    icon: 'AlertCircle'
   },
   'Sandbagged': {
     label: 'Sandbagged',
     color: 'text-purple-400',
     borderColor: 'border-purple-500/50',
     bgColor: 'bg-purple-500/10',
-    icon: 'Bomb'
+    icon: 'TrendingDown'
   },
   'Context-Switched': {
     label: 'Context-Switched',
     color: 'text-slate-400',
     borderColor: 'border-slate-500/50',
     bgColor: 'bg-slate-500/10',
-    icon: 'CloudFog'
+    icon: 'Glasses'
   },
   'Pressured': {
     label: 'Pressured',
     color: 'text-pink-400',
     borderColor: 'border-pink-500/50',
     bgColor: 'bg-pink-500/10',
-    icon: 'Tent'
+    icon: 'Megaphone'
   },
   'Hid': {
     label: 'Hid',
     color: 'text-blue-400',
     borderColor: 'border-blue-500/50',
     bgColor: 'bg-blue-500/10',
-    icon: 'Target'
+    icon: 'Lock'
   },
   'Overclaimed': {
     label: 'Overclaimed',
     color: 'text-orange-400',
     borderColor: 'border-orange-500/50',
     bgColor: 'bg-orange-500/10',
-    icon: 'Gift'
+    icon: 'Zap'
   }
 };
 
