@@ -49,22 +49,13 @@ export interface CombinedAuditResult extends AuditResult {
  * Map detection categories (HOW verbs) to the unified taxonomy auditor
  */
 const CATEGORY_TO_SKILL_ID: Record<string, string> = {
-  // New HOW verb categories -> unified taxonomy auditor
   'Fabricated': 'taxonomy-auditor',
   'Sandbagged': 'taxonomy-auditor',
   'Context-Switched': 'taxonomy-auditor',
   'Pressured': 'taxonomy-auditor',
   'Hid': 'taxonomy-auditor',
   'Overclaimed': 'taxonomy-auditor',
-  // Legacy category names -> map to legacy auditors (for backward compatibility)
-  'Goal Reasoning': 'goal-reasoning-auditor',
-  'Deception Planning': 'deception-planning-auditor',
-  'Reward Hacking': 'reward-hacking-auditor',
-  'Sabotage Planning': 'sabotage-planning-auditor',
-  'Obfuscation & Evasion': 'obfuscation-evasion-auditor',
-  'Persona Manipulation': 'persona-manipulation-auditor',
-  'Sycophancy': 'sycophancy-auditor',
-  'none': 'taxonomy-auditor', // Default to taxonomy auditor
+  'none': 'taxonomy-auditor',
 };
 
 /**
