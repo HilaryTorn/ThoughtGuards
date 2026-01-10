@@ -427,7 +427,44 @@ const AuditView: React.FC<AuditViewProps> = ({ onResult, settings }) => {
         updated.set(caseId, { ...testCase, status: 'completed' as TestCaseStatus, result });
         return updated;
       });
-      
+
+      // Save to database
+      try {
+        await fetch('/api/audit-results', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            audit_id: result.id,
+            trace_id: testCase.conversation_id,
+            conversation_id: result.conversation_id || testCase.conversation_id,
+            skill_id: result.skill_id,
+            model_name: result.model_name,
+            overall_score: result.overall_score,
+            confidence: result.confidence,
+            status: result.status,
+            risk_score: result.risk_score,
+            detected_types: result.detected_types,
+            metrics: result.metrics,
+            recommendations: result.recommendations,
+            limitations: result.limitations,
+            usage: result.usage,
+            detection_event: result.detection_event,
+            conversation_data: testCase,
+            // Multi-skill fields
+            skill_results: result.skill_results,
+            combined_score: result.combined_score,
+            primary_category: result.primary_category,
+            secondary_categories: result.secondary_categories,
+            detection_metadata: result.detection_metadata,
+            // Taxonomy patterns
+            patterns: result.patterns,
+          }),
+        });
+      } catch (saveErr) {
+        console.error('Failed to save audit result to database:', saveErr);
+        // Don't fail the audit if save fails - data is still in UI
+      }
+
       if (onResult) {
         onResult(result, testCase);
       }
