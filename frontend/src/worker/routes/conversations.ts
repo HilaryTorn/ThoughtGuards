@@ -66,16 +66,33 @@ conversationsRoutes.get('/', async (c) => {
           ORDER BY turn_number
         `).bind(conv.conversation_id).all();
 
-        return {
-          ...conv,
-          turns: (turnsResult.results || []).map((turn: any) => ({
+        // Fetch tool calls for each turn
+        const turnsWithToolCalls = await Promise.all((turnsResult.results || []).map(async (turn: any) => {
+          const toolCallsResult = await db.prepare(`
+            SELECT * FROM tool_calls
+            WHERE turn_id = ?
+            ORDER BY timestamp
+          `).bind(turn.turn_id).all();
+
+          return {
             turn_id: turn.turn_id,
             turn_number: turn.turn_number,
             role: turn.role,
             content: turn.content,
             reasoning_content: turn.reasoning_content,
             timestamp: turn.timestamp,
-          }))
+            tool_calls: (toolCallsResult.results || []).map((tc: any) => ({
+              tool: tc.tool_name,
+              arguments: tc.arguments ? JSON.parse(tc.arguments) : {},
+              result: tc.result ? JSON.parse(tc.result) : null,
+              timestamp: tc.timestamp,
+            })),
+          };
+        }));
+
+        return {
+          ...conv,
+          turns: turnsWithToolCalls
         };
       })
     );
@@ -141,9 +158,10 @@ conversationsRoutes.get('/:conversationId', async (c) => {
       return {
         ...turn,
         tool_calls: (toolCallsResult.results || []).map((tc: any) => ({
-          ...tc,
+          tool: tc.tool_name,
           arguments: tc.arguments ? JSON.parse(tc.arguments) : {},
-          result: tc.result ? JSON.parse(tc.result) : {}
+          result: tc.result ? JSON.parse(tc.result) : null,
+          timestamp: tc.timestamp,
         }))
       };
     }));
@@ -177,6 +195,17 @@ conversationsRoutes.post('/', async (c) => {
     }
 
     const now = new Date().toISOString();
+
+    // Auto-create customer if doesn't exist (hackathon fix for foreign key constraint)
+    await db.prepare(`
+      INSERT OR IGNORE INTO customers (customer_id, name, email, member_since, lifetime_value, total_orders, total_returns, return_rate)
+      VALUES (?, ?, ?, ?, 0, 0, 0, 0)
+    `).bind(
+      customer_id,
+      `Customer ${customer_id}`,
+      `${customer_id}@example.com`,
+      now
+    ).run();
 
     await db.prepare(`
       INSERT OR IGNORE INTO conversations (

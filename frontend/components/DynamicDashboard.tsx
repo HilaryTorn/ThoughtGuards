@@ -73,7 +73,7 @@ const DynamicDashboard: React.FC<DynamicDashboardProps> = ({ settings, onViewTra
 
     const loadRecentDetections = async () => {
       try {
-        const response = await fetch('/api/audit-results?limit=10');
+        const response = await fetch('/api/audit-reports?limit=10');
         if (!response.ok) return;
 
         const data = await response.json() as { traces?: any[] };
@@ -83,10 +83,15 @@ const DynamicDashboard: React.FC<DynamicDashboardProps> = ({ settings, onViewTra
             const primaryDetection = t.detectedTypes?.find((d: any) => d.evidence?.length > 0) || t.detectedTypes?.[0];
             const evidence = primaryDetection?.evidence?.[0] || {};
 
-            const reasoningTurn = t.conversation?.find((msg: any) => msg.reasoning_trace);
-            const fullCoT = reasoningTurn?.reasoning_trace || evidence.snippet || 'No reasoning trace available';
+            // conversation can be an object {conversation_id, turns} or an array
+            const conversationTurns = Array.isArray(t.conversation)
+              ? t.conversation
+              : (t.conversation?.turns || []);
 
-            const conversationHistory: Message[] = (t.conversation || []).map((msg: any) => ({
+            const reasoningTurn = conversationTurns.find((msg: any) => msg.reasoning_content || msg.reasoning_trace);
+            const fullCoT = reasoningTurn?.reasoning_content || reasoningTurn?.reasoning_trace || evidence.snippet || 'No reasoning trace available';
+
+            const conversationHistory: Message[] = conversationTurns.map((msg: any) => ({
               role: msg.role === 'customer' ? 'user' : msg.role,
               content: msg.content,
               timestamp: msg.timestamp

@@ -7,55 +7,14 @@ import type { Env } from '../index';
 
 export const auditResultsRoutes = new Hono<{ Bindings: Env }>();
 
-// Ensure audit_results table exists with full schema
+// Ensure audit_reports table exists (should be created via migrations)
 async function ensureTableExists(db: D1Database) {
   try {
-    await db.prepare('SELECT 1 FROM audit_results LIMIT 1').first();
+    await db.prepare('SELECT 1 FROM audit_reports LIMIT 1').first();
   } catch (error: any) {
     if (error.message?.includes('no such table')) {
-      // Create the table with full schema
-      await db.prepare(`
-        CREATE TABLE IF NOT EXISTS audit_results (
-          audit_id TEXT PRIMARY KEY,
-          trace_id TEXT NOT NULL UNIQUE,
-          conversation_id TEXT NOT NULL,
-          skill_id TEXT NOT NULL,
-          model_name TEXT NOT NULL,
-          overall_score REAL NOT NULL,
-          confidence TEXT NOT NULL,
-          status TEXT NOT NULL,
-          risk_score REAL NOT NULL,
-          detected_types TEXT,
-          metrics TEXT,
-          recommendations TEXT,
-          limitations TEXT,
-          usage TEXT,
-          detection_event TEXT,
-          conversation_data TEXT NOT NULL,
-          created_at TEXT NOT NULL,
-          updated_at TEXT NOT NULL,
-          skill_results TEXT,
-          combined_score REAL,
-          primary_category TEXT,
-          secondary_categories TEXT,
-          detection_metadata TEXT,
-          patterns TEXT,
-          run_count INTEGER DEFAULT 1,
-          score_mean REAL,
-          score_stddev REAL,
-          score_p5 REAL,
-          score_p50 REAL,
-          score_p95 REAL,
-          score_ci_lower REAL,
-          score_ci_upper REAL,
-          calibration_metrics TEXT,
-          raw_response TEXT,
-          FOREIGN KEY (conversation_id) REFERENCES conversations(conversation_id)
-        )
-      `).run();
-      await db.prepare('CREATE INDEX IF NOT EXISTS idx_audit_results_conversation_id ON audit_results(conversation_id)').run();
-      await db.prepare('CREATE INDEX IF NOT EXISTS idx_audit_results_trace_id ON audit_results(trace_id)').run();
-      await db.prepare('CREATE INDEX IF NOT EXISTS idx_audit_results_created_at ON audit_results(created_at)').run();
+      console.error('audit_reports table does not exist! Run migrations: npm run migrate:local');
+      throw new Error('audit_reports table missing - run database migrations');
     }
   }
 }
@@ -74,7 +33,14 @@ auditResultsRoutes.get('/', async (c) => {
   const status = c.req.query('status');
 
   try {
-    let query = 'SELECT * FROM audit_results WHERE 1=1';
+    // Select only fields needed for list view (exclude large conversation_snapshot)
+    let query = `SELECT
+      report_id, conversation_id, created_at, skill_id, model_name,
+      overall_score, confidence, primary_category, detected_types,
+      skill_results, combined_score, secondary_categories, detection_metadata,
+      run_count, score_mean, score_stddev, score_p5, score_p50, score_p95,
+      score_ci_lower, score_ci_upper, usage
+    FROM audit_reports WHERE 1=1`;
     const params: any[] = [];
 
     if (conversationId) {
@@ -109,24 +75,29 @@ auditResultsRoutes.get('/', async (c) => {
 
     // Parse JSON fields and convert to camelCase format expected by frontend
     const traces = (result.results || []).map((row: any) => ({
-      id: row.trace_id,
+      id: row.report_id || row.trace_id,
       timestamp: row.created_at ? new Date(row.created_at).toLocaleTimeString() : 'N/A',
-      messageCount: row.conversation_data ? JSON.parse(row.conversation_data).length : 0,
-      status: row.status || 'clean',
-      riskScore: row.risk_score || 0,
-      detectionEvent: row.detection_event ? JSON.parse(row.detection_event) : undefined,
-      conversation: row.conversation_data ? JSON.parse(row.conversation_data) : [],
+      messageCount: 0, // Will be populated when viewing details, not needed for list
+      status: row.overall_score >= 0.5 ? 'suspicious' : 'clean',
+      riskScore: row.overall_score * 100 || 0,
+      detectionEvent: row.overall_score >= 0.5 ? {
+        category: row.primary_category || 'Unknown',
+        timestamp: row.created_at,
+        context: `Skill: ${row.skill_id}`,
+        severity: 'high'
+      } : undefined,
+      conversation: [], // Not fetched in list view for performance
       // Audit metadata
-      auditId: row.audit_id,
+      auditId: row.report_id,
       conversationId: row.conversation_id,
       skillId: row.skill_id || '',
       modelName: row.model_name || '',
       overallScore: row.overall_score || 0,
       confidence: row.confidence || 'low',
       detectedTypes: row.detected_types ? JSON.parse(row.detected_types) : [],
-      metrics: row.metrics ? JSON.parse(row.metrics) : {},
-      recommendations: row.recommendations ? JSON.parse(row.recommendations) : [],
-      limitations: row.limitations ? JSON.parse(row.limitations) : [],
+      metrics: {}, // Skipped in list view for performance
+      recommendations: [], // Not needed in list view
+      limitations: [], // Not needed in list view
       usage: row.usage ? JSON.parse(row.usage) : undefined,
       // Multi-skill fields
       skillResults: row.skill_results ? JSON.parse(row.skill_results) : undefined,
@@ -136,9 +107,9 @@ auditResultsRoutes.get('/', async (c) => {
       detectionMetadata: row.detection_metadata ? JSON.parse(row.detection_metadata) : undefined,
       // Taxonomy patterns from taxonomy-auditor
       patterns: row.patterns ? JSON.parse(row.patterns) : undefined,
-      // Statistical fields
-      runCount: row.run_count || 1,
-      statistics: row.score_mean !== null ? {
+      // Statistical fields (may not exist in audit_reports table)
+      runCount: row.run_count || undefined,
+      statistics: (row.score_mean !== null && row.score_mean !== undefined) ? {
         mean: row.score_mean,
         stddev: row.score_stddev || 0,
         quantiles: {
@@ -158,7 +129,7 @@ auditResultsRoutes.get('/', async (c) => {
     }));
 
     // Get total count
-    let countQuery = 'SELECT COUNT(*) as count FROM audit_results WHERE 1=1';
+    let countQuery = 'SELECT COUNT(*) as count FROM audit_reports WHERE 1=1';
     const countParams: any[] = [];
 
     if (conversationId) {
@@ -234,6 +205,8 @@ auditResultsRoutes.post('/', async (c) => {
 
   try {
     const body = await c.req.json();
+    console.log('Received audit result POST with body keys:', Object.keys(body));
+
     const {
       audit_id,
       trace_id,
@@ -262,8 +235,10 @@ auditResultsRoutes.post('/', async (c) => {
     } = body;
 
     if (!audit_id || !trace_id || !conversation_id) {
+      console.error('Missing required fields:', { audit_id, trace_id, conversation_id });
       return c.json({
-        error: 'Missing required fields: audit_id, trace_id, conversation_id'
+        error: 'Missing required fields: audit_id, trace_id, conversation_id',
+        received: { audit_id, trace_id, conversation_id }
       }, 400);
     }
 
@@ -278,7 +253,15 @@ auditResultsRoutes.post('/', async (c) => {
     const scoreCiLower = statistics?.confidenceInterval?.lower;
     const scoreCiUpper = statistics?.confidenceInterval?.upper;
 
-    await db.prepare(`
+    console.log('Attempting to insert with values:', {
+      audit_id,
+      trace_id,
+      conversation_id,
+      skill_id: skill_id || '',
+      model_name: model_name || '',
+    });
+
+    const result = await db.prepare(`
       INSERT OR REPLACE INTO audit_results (
         audit_id, trace_id, conversation_id, skill_id, model_name,
         overall_score, confidence, status, risk_score,
@@ -323,10 +306,17 @@ auditResultsRoutes.post('/', async (c) => {
       now
     ).run();
 
+    console.log('Insert successful, result:', result);
     return c.json({ success: true, audit_id, trace_id }, 201);
   } catch (error: any) {
     console.error('Error creating audit result:', error);
-    return c.json({ error: error.message || 'Failed to create audit result' }, 500);
+    console.error('Error stack:', error.stack);
+    console.error('Error cause:', error.cause);
+    return c.json({
+      error: error.message || 'Failed to create audit result',
+      details: error.stack,
+      cause: error.cause
+    }, 500);
   }
 });
 

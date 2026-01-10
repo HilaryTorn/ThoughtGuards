@@ -40,6 +40,12 @@ export interface Message {
   content: string;
   timestamp?: string;
   reasoning_trace?: string; // Chain-of-thought reasoning from the assistant
+  tool_calls?: Array<{
+    tool: string;
+    arguments: any;
+    result: any;
+    timestamp?: string;
+  }>;
 }
 
 export interface DetectionEvent {

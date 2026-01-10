@@ -35,25 +35,29 @@ fi
 echo "📦 Building frontend..."
 npm run build
 
+# NOTE: Database migrations commented out to prevent data loss on deployment
+# Migrations should be run manually when needed:
+#   wrangler d1 execute thoughtguards-db --file=./db/migrations/001_initial.sql
+#   wrangler d1 execute thoughtguards-db --file=./db/migrations/002_add_audit_results.sql
+#
 # Apply database migrations
-echo ""
-echo "🗄️  Applying database migrations..."
-if [ -f "db/migrations/001_initial.sql" ]; then
-    wrangler d1 execute thoughtguards-db --file=./db/migrations/001_initial.sql
-else
-    echo "⚠️  No migration file found, skipping..."
-fi
+# echo ""
+# echo "🗄️  Applying database migrations..."
+# if [ -f "db/migrations/001_initial.sql" ]; then
+#     wrangler d1 execute thoughtguards-db --file=./db/migrations/001_initial.sql
+# else
+#     echo "⚠️  No migration file found, skipping..."
+# fi
 
-# Generate and apply seed data
-echo ""
-echo "🌱 Seeding database..."
-npm run seed:generate
-wrangler d1 execute thoughtguards-db --file=./db/seed_data.sql
+# NOTE: Database seeding removed to prevent data loss on deployment
+# To seed the database manually, run:
+#   npm run seed:generate
+#   wrangler d1 execute thoughtguards-db --file=./db/seed_data.sql
 
-# Deploy to Cloudflare Pages
+# Deploy to Cloudflare Workers
 echo ""
-echo "☁️  Deploying to Cloudflare Pages..."
-wrangler pages deploy dist --project-name=thoughtguards-chatbot
+echo "☁️  Deploying to Cloudflare Workers..."
+wrangler deploy
 
 echo ""
 echo "✅ Deployment complete!"

@@ -1,5 +1,5 @@
-import React from 'react';
-import { AlertCircle } from 'lucide-react';
+import React, { useState } from 'react';
+import { AlertCircle, ChevronDown, ChevronRight } from 'lucide-react';
 import IssueCard, { IssueCardProps } from './IssueCard';
 import { HOWCode, WHYCode, TARGETCode } from '../types';
 import { HOW_VERBS } from '../constants';
@@ -100,6 +100,8 @@ const DetectedIssuesPanel: React.FC<DetectedIssuesPanelProps> = ({
   patterns,
   className = '',
 }) => {
+  const [isPanelExpanded, setIsPanelExpanded] = useState(true);
+
   if (!patterns || patterns.length === 0) {
     return (
       <div className={`bg-slate-900/50 border border-slate-800 rounded-xl overflow-hidden ${className}`}>
@@ -123,36 +125,50 @@ const DetectedIssuesPanel: React.FC<DetectedIssuesPanelProps> = ({
 
   return (
     <div className={`bg-slate-900/50 border border-slate-800 rounded-xl overflow-hidden flex flex-col ${className}`}>
-      {/* Panel Header */}
-      <div className="flex items-center gap-2 px-5 py-4 border-b border-slate-800 bg-slate-900/70 flex-shrink-0">
+      {/* Panel Header - Clickable */}
+      <button
+        onClick={() => setIsPanelExpanded(!isPanelExpanded)}
+        className="w-full flex items-center gap-2 px-5 py-4 border-b border-slate-800 bg-slate-900/70 hover:bg-slate-900 transition-colors"
+      >
+        {isPanelExpanded ? (
+          <ChevronDown size={14} className="text-slate-400" />
+        ) : (
+          <ChevronRight size={14} className="text-slate-400" />
+        )}
         <AlertCircle size={16} className="text-amber-500" />
-        <h3 className="text-sm font-semibold text-amber-500">Detected Issues</h3>
-        <span className="ml-auto text-xs text-slate-500 font-mono">
-          {patterns.length} issue{patterns.length !== 1 ? 's' : ''}
-        </span>
-      </div>
+        <h3 className="text-sm font-semibold text-amber-500">Detected Issues ({patterns.length})</h3>
+
+        {!isPanelExpanded && (
+          <div className="ml-2 text-xs text-slate-400 font-mono truncate flex-1 text-left">
+            {sortedPatterns.slice(0, 4).map((p, i) => generateIssueId(p, i)).join(', ')}
+            {patterns.length > 4 && ` +${patterns.length - 4} more`}
+          </div>
+        )}
+      </button>
 
       {/* Issue Cards - Scrollable */}
-      <div className="overflow-y-auto max-h-[500px]">
-        {sortedPatterns.map((pattern, index) => (
-          <IssueCard
-            key={pattern.triad + index}
-            id={generateIssueId(pattern, index)}
-            title={generateTitle(pattern)}
-            description={pattern.short_desc}
-            severity={getSeverity(pattern)}
-            howCode={pattern.how_code}
-            whyCode={pattern.why_code}
-            targetCode={pattern.target_code}
-            sentence={pattern.sentence}
-            evidenceQuotes={pattern.quotes?.map(q => ({
-              text: q.text,
-              source: q.source,
-            }))}
-            impactNote={getImpactNote(pattern)}
-          />
-        ))}
-      </div>
+      {isPanelExpanded && (
+        <div className="overflow-y-auto">
+          {sortedPatterns.map((pattern, index) => (
+            <IssueCard
+              key={pattern.triad + index}
+              id={generateIssueId(pattern, index)}
+              title={generateTitle(pattern)}
+              description={pattern.short_desc}
+              severity={getSeverity(pattern)}
+              howCode={pattern.how_code}
+              whyCode={pattern.why_code}
+              targetCode={pattern.target_code}
+              sentence={pattern.sentence}
+              evidenceQuotes={pattern.quotes?.map(q => ({
+                text: q.text,
+                source: q.source,
+              }))}
+              impactNote={getImpactNote(pattern)}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 };

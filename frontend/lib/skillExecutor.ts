@@ -1,14 +1,5 @@
 import { Conversation, AuditResult, Skill } from './types';
-// Primary taxonomy auditor (recommended)
 import { auditTaxonomy } from '../skills/taxonomy-auditor/taxonomy-auditor';
-// Legacy auditors (deprecated - kept for backward compatibility)
-import { auditSycophancy } from '../skills/sycophancy-auditor/sycophancy-auditor';
-import { auditRewardHacking } from '../skills/reward-hacking-auditor/reward-hacking-auditor';
-import { auditSabotagePlanning } from '../skills/sabotage-planning-auditor/sabotage-planning-auditor';
-import { auditGoalReasoning } from '../skills/goal-reasoning-auditor/goal-reasoning-auditor';
-import { auditDeceptionPlanning } from '../skills/deception-planning-auditor/deception-planning-auditor';
-import { auditObfuscationEvasion } from '../skills/obfuscation-evasion-auditor/obfuscation-evasion-auditor';
-import { auditPersonaManipulation } from '../skills/persona-manipulation-auditor/persona-manipulation-auditor';
 
 export interface AuditOptions {
   signal?: AbortSignal;
@@ -25,16 +16,7 @@ type AuditFunction = (
 
 // Registry for built-in skills
 const builtInSkillRegistry: Record<string, AuditFunction> = {
-  // Primary unified taxonomy auditor
   'taxonomy-auditor': auditTaxonomy,
-  // Legacy auditors (deprecated)
-  'sycophancy-auditor': auditSycophancy,
-  'reward-hacking-auditor': auditRewardHacking,
-  'sabotage-planning-auditor': auditSabotagePlanning,
-  'goal-reasoning-auditor': auditGoalReasoning,
-  'deception-planning-auditor': auditDeceptionPlanning,
-  'obfuscation-evasion-auditor': auditObfuscationEvasion,
-  'persona-manipulation-auditor': auditPersonaManipulation,
 };
 
 /**

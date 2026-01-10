@@ -34,51 +34,63 @@ const App: React.FC = () => {
   const [traces, setTraces] = useState<Trace[]>([]);
   const [tracesLoaded, setTracesLoaded] = useState(false);
 
-  // Load traces from database on mount
+  // Load audited conversations from database on mount
   useEffect(() => {
     const loadTraces = async () => {
       try {
-        const response = await fetch('/api/audit-results?limit=1000');
+        const response = await fetch('/api/audit-reports');
         if (response.ok) {
-          const data = await response.json() as { results?: any[]; traces?: any[] };
-          // API returns { results, total, limit, offset }
-          const rawResults = data.results || data.traces || [];
-          if (Array.isArray(rawResults)) {
-            // Convert API audit results to Trace format
-            // API returns camelCase fields
-            const loadedTraces: Trace[] = rawResults.map((t: any) => ({
-              id: t.id,
-              timestamp: t.timestamp || t.createdAt,
-              messageCount: t.messageCount || t.conversation?.length || 0,
-              status: t.status,
-              riskScore: Math.round((t.riskScore || t.overallScore || 0) * (t.riskScore > 1 ? 1 : 100)),
-              detectionEvent: t.detectionEvent,
-              conversation: t.conversation || [],
-              // Include audit metadata
-              auditId: t.auditId,
-              conversationId: t.conversationId,
-              skillId: t.skillId,
-              modelName: t.modelName,
-              overallScore: t.overallScore,
-              confidence: t.confidence,
-              detectedTypes: t.detectedTypes,
-              metrics: t.metrics,
-              recommendations: t.recommendations,
-              limitations: t.limitations,
-              usage: t.usage,
-              // Multi-skill fields
-              skillResults: t.skillResults,
-              combinedScore: t.combinedScore,
-              primaryCategory: t.primaryCategory,
-              secondaryCategories: t.secondaryCategories,
-              detectionMetadata: t.detectionMetadata,
-            }));
+          const data = await response.json() as { traces?: any[] };
+          const auditTraces = data.traces || [];
+          if (Array.isArray(auditTraces)) {
+            // Convert audit reports to Trace format for the UI
+            const loadedTraces: Trace[] = auditTraces.map((trace: any) => {
+              const riskScore = Math.round((trace.overallScore || 0) * 100);
+              const isSuspicious = trace.overallScore >= 0.5;
+              const primaryDetection = trace.detectedTypes?.[0];
+
+              // conversation can be an object {conversation_id, turns} or an array
+              const conversationTurns = Array.isArray(trace.conversation)
+                ? trace.conversation
+                : (trace.conversation?.turns || []);
+
+              return {
+                id: trace.auditId || trace.id,
+                timestamp: trace.createdAt || trace.timestamp,
+                messageCount: conversationTurns.length || 0,
+                status: isSuspicious ? 'flagged' as TraceStatus : 'clean' as TraceStatus,
+                riskScore,
+                detectionEvent: isSuspicious ? {
+                  id: trace.auditId || trace.id,
+                  category: (trace.primaryCategory || 'Fabricated') as DetectionCategory,
+                  riskScore,
+                  timestamp: trace.createdAt || new Date().toISOString(),
+                  snippet: primaryDetection?.evidence?.[0]?.snippet || trace.skillId || 'Audit detection',
+                  fullCoT: conversationTurns.find((m: any) => m.reasoning_content || m.reasoning_trace)?.reasoning_content ||
+                           conversationTurns.find((m: any) => m.reasoning_trace)?.reasoning_trace || '',
+                  conversationHistory: conversationTurns.map((msg: any) => ({
+                    role: msg.role === 'customer' ? 'user' : msg.role,
+                    content: msg.content,
+                    timestamp: msg.timestamp,
+                  })) as Message[],
+                  matchedPatterns: trace.detectedTypes?.map((d: any) => d.type) || [],
+                  confidence: {
+                    model: trace.overallScore || 0,
+                    heuristic: 0.8,
+                  },
+                } : undefined,
+                conversation: conversationTurns,
+                conversationId: trace.conversationId || trace.conversation?.conversation_id,
+                chatbotMode: trace.detectionMetadata?.chatbot_mode,
+                chatbotModel: trace.modelName,
+                label: isSuspicious ? 'adversarial' : 'clean',
+              };
+            });
             setTraces(loadedTraces);
           }
         }
       } catch (error) {
-        console.error('Failed to load traces:', error);
-        // Fallback to empty array
+        console.error('Failed to load conversations:', error);
         setTraces([]);
       } finally {
         setTracesLoaded(true);
@@ -216,13 +228,13 @@ const App: React.FC = () => {
       const trace = traces.find(t => t.id === traceId);
       if (trace) {
         // Fetch the audit result to get all fields, then update status
-        const response = await fetch(`/api/audit-results?limit=1000`);
+        const response = await fetch(`/api/audit-reports?limit=1000`);
         if (response.ok) {
           const data = await response.json();
           const auditResult = data.traces?.find((t: any) => t.id === traceId);
           if (auditResult) {
             // Update the status in the database
-            await fetch('/api/audit-results', {
+            await fetch('/api/audit-reports', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -518,7 +530,7 @@ const App: React.FC = () => {
             }),
           });
 
-          const saveResponse = await fetch('/api/audit-results', {
+          const saveResponse = await fetch('/api/audit-reports', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
