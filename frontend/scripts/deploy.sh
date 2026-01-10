@@ -44,11 +44,10 @@ else
     echo "⚠️  No migration file found, skipping..."
 fi
 
-# Generate and apply seed data
-echo ""
-echo "🌱 Seeding database..."
-npm run seed:generate
-wrangler d1 execute thoughtguards-db --file=./db/seed_data.sql
+# NOTE: Database seeding removed to prevent data loss on deployment
+# To seed the database manually, run:
+#   npm run seed:generate
+#   wrangler d1 execute thoughtguards-db --file=./db/seed_data.sql
 
 # Deploy to Cloudflare Workers
 echo ""
