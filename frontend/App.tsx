@@ -40,28 +40,52 @@ const App: React.FC = () => {
       try {
         const response = await fetch('/api/audit-reports');
         if (response.ok) {
-          const data = await response.json() as { conversations?: any[]; results?: any[] };
-          const rawConversations = data.conversations || data.results || [];
-          if (Array.isArray(rawConversations)) {
-            // Convert conversations to Trace format for the UI
-            const loadedTraces: Trace[] = rawConversations.map((conv: any) => ({
-              id: conv.conversation_id,
-              timestamp: conv.started_at || conv.timestamp,
-              messageCount: conv.turn_count || 0,
-              status: conv.label === 'adversarial' ? 'suspicious' as TraceStatus : 'normal' as TraceStatus,
-              riskScore: conv.expected_manipulation ? 80 : 20,
-              detectionEvent: conv.label === 'adversarial' ? {
-                category: 'Fabricated' as DetectionCategory,
-                timestamp: conv.started_at,
-                context: `Mode: ${conv.chatbot_mode || 'unknown'}`,
-                severity: 'high' as const,
-              } : undefined,
-              conversation: [], // Will be loaded when viewing details
-              conversationId: conv.conversation_id,
-              chatbotMode: conv.chatbot_mode,
-              chatbotModel: conv.chatbot_model,
-              label: conv.label,
-            }));
+          const data = await response.json() as { traces?: any[] };
+          const auditTraces = data.traces || [];
+          if (Array.isArray(auditTraces)) {
+            // Convert audit reports to Trace format for the UI
+            const loadedTraces: Trace[] = auditTraces.map((trace: any) => {
+              const riskScore = Math.round((trace.overallScore || 0) * 100);
+              const isSuspicious = trace.overallScore >= 0.5;
+              const primaryDetection = trace.detectedTypes?.[0];
+
+              // conversation can be an object {conversation_id, turns} or an array
+              const conversationTurns = Array.isArray(trace.conversation)
+                ? trace.conversation
+                : (trace.conversation?.turns || []);
+
+              return {
+                id: trace.auditId || trace.id,
+                timestamp: trace.createdAt || trace.timestamp,
+                messageCount: conversationTurns.length || 0,
+                status: isSuspicious ? 'flagged' as TraceStatus : 'clean' as TraceStatus,
+                riskScore,
+                detectionEvent: isSuspicious ? {
+                  id: trace.auditId || trace.id,
+                  category: (trace.primaryCategory || 'Fabricated') as DetectionCategory,
+                  riskScore,
+                  timestamp: trace.createdAt || new Date().toISOString(),
+                  snippet: primaryDetection?.evidence?.[0]?.snippet || trace.skillId || 'Audit detection',
+                  fullCoT: conversationTurns.find((m: any) => m.reasoning_content || m.reasoning_trace)?.reasoning_content ||
+                           conversationTurns.find((m: any) => m.reasoning_trace)?.reasoning_trace || '',
+                  conversationHistory: conversationTurns.map((msg: any) => ({
+                    role: msg.role === 'customer' ? 'user' : msg.role,
+                    content: msg.content,
+                    timestamp: msg.timestamp,
+                  })) as Message[],
+                  matchedPatterns: trace.detectedTypes?.map((d: any) => d.type) || [],
+                  confidence: {
+                    model: trace.overallScore || 0,
+                    heuristic: 0.8,
+                  },
+                } : undefined,
+                conversation: conversationTurns,
+                conversationId: trace.conversationId || trace.conversation?.conversation_id,
+                chatbotMode: trace.detectionMetadata?.chatbot_mode,
+                chatbotModel: trace.modelName,
+                label: isSuspicious ? 'adversarial' : 'clean',
+              };
+            });
             setTraces(loadedTraces);
           }
         }

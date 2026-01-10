@@ -9,7 +9,6 @@ import { AVAILABLE_SKILLS, CATEGORY_TO_SKILL, getSkillById } from '../lib/skills
 import ReasoningDisplay from './ReasoningDisplay';
 import ReportCreationModal, { ReportConfig } from './ReportCreationModal';
 import ParameterSweepView from './ParameterSweepView';
-import ReportListView from './ReportListView';
 import { executeReport } from '../lib/reportExecutor';
 import ToolCallEvidence from './ToolCallEvidence';
 
@@ -61,40 +60,6 @@ const AuditView: React.FC<AuditViewProps> = ({ onResult, settings }) => {
     };
     loadModels();
   }, []);
-
-  // Load report counts for all conversations
-  useEffect(() => {
-    const loadReportCounts = async () => {
-      if (allTestCases.length === 0) return;
-      
-      try {
-        const conversationIds = allTestCases.map(tc => tc.conversation_id);
-        const counts = new Map<string, number>();
-        
-        // Load reports in batches
-        for (let i = 0; i < conversationIds.length; i += 50) {
-          const batch = conversationIds.slice(i, i + 50);
-          for (const convId of batch) {
-            try {
-              const response = await fetch(`/api/audit-reports?conversation_id=${convId}&limit=1`);
-              if (response.ok) {
-                const data = await response.json();
-                counts.set(convId, data.total || 0);
-              }
-            } catch (error) {
-              // Ignore individual errors
-            }
-          }
-        }
-        
-        setReportCounts(counts);
-      } catch (error) {
-        console.warn('Failed to load report counts:', error);
-      }
-    };
-    
-    loadReportCounts();
-  }, [allTestCases]);
 
   // Load all test cases and existing audit results on mount and when component becomes visible
   useEffect(() => {
@@ -236,7 +201,7 @@ const AuditView: React.FC<AuditViewProps> = ({ onResult, settings }) => {
     
     const reloadAudits = async () => {
       try {
-        const auditResponse = await fetch('/api/audit-results?limit=10000');
+        const auditResponse = await fetch('/api/audit-reports?limit=10000');
         if (auditResponse.ok) {
           const auditData = await auditResponse.json();
           if (auditData.traces && Array.isArray(auditData.traces)) {
@@ -314,7 +279,6 @@ const AuditView: React.FC<AuditViewProps> = ({ onResult, settings }) => {
   const [selectedTestCase, setSelectedTestCase] = useState<EnrichedTestCase | null>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [filterCategory, setFilterCategory] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<TestCaseStatus | 'all'>('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [autoRunEnabled, setAutoRunEnabled] = useState(false);
@@ -327,9 +291,7 @@ const AuditView: React.FC<AuditViewProps> = ({ onResult, settings }) => {
   // New report system modals
   const [showCreateReportModal, setShowCreateReportModal] = useState(false);
   const [showParameterSweepModal, setShowParameterSweepModal] = useState(false);
-  const [showReportsListModal, setShowReportsListModal] = useState(false);
   const [selectedConversationForReport, setSelectedConversationForReport] = useState<EnrichedTestCase | null>(null);
-  const [reportCounts, setReportCounts] = useState<Map<string, number>>(new Map());
   const [availableModels, setAvailableModels] = useState<string[]>([]);
 
   // Note: getSkillForTestCase is no longer needed with multi-skill execution
@@ -348,19 +310,14 @@ const AuditView: React.FC<AuditViewProps> = ({ onResult, settings }) => {
         tc.turns.some(t => t.content.toLowerCase().includes(query))
       );
     }
-    
-    // Category filter
-    if (filterCategory !== 'all') {
-      filtered = filtered.filter(tc => tc.category === filterCategory);
-    }
-    
+
     // Status filter
     if (filterStatus !== 'all') {
       filtered = filtered.filter(tc => tc.status === filterStatus);
     }
     
     return filtered;
-  }, [testCasesWithStatus, searchQuery, filterCategory, filterStatus]);
+  }, [testCasesWithStatus, searchQuery, filterStatus]);
 
   // Pagination
   const totalPages = Math.ceil(filteredTestCases.length / ITEMS_PER_PAGE);
@@ -635,11 +592,6 @@ const AuditView: React.FC<AuditViewProps> = ({ onResult, settings }) => {
   }, [selectedCases, testCasesWithStatus, handleRunAudit]);
 
   // Get unique categories
-  const categories = useMemo(() => {
-    const cats = new Set(allTestCases.map(tc => tc.category));
-    return Array.from(cats);
-  }, [allTestCases]);
-
   // Stats
   const stats = useMemo(() => {
     const cases = Array.from(testCasesWithStatus.values());
@@ -801,21 +753,7 @@ const AuditView: React.FC<AuditViewProps> = ({ onResult, settings }) => {
             className="w-full bg-slate-900/50 border border-slate-800 rounded-lg pl-10 pr-4 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
           />
         </div>
-        
-        <select
-          value={filterCategory}
-          onChange={(e) => {
-            setFilterCategory(e.target.value);
-            setCurrentPage(1);
-          }}
-          className="bg-slate-900/50 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
-        >
-          <option value="all">All Categories</option>
-          {categories.map(cat => (
-            <option key={cat} value={cat}>{cat}</option>
-          ))}
-        </select>
-        
+
         <select
           value={filterStatus}
           onChange={(e) => {
@@ -939,19 +877,6 @@ const AuditView: React.FC<AuditViewProps> = ({ onResult, settings }) => {
                     </div>
                     <div className="flex items-center gap-2 mb-2">
                       <p className="text-xs text-slate-400">{testCase.category} • {testCase.display_type}</p>
-                      {reportCounts.has(testCase.conversation_id) && reportCounts.get(testCase.conversation_id)! > 0 && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedConversationForReport(testCase);
-                            setShowReportsListModal(true);
-                          }}
-                          className="text-xs px-2 py-0.5 bg-cyan-500/20 text-cyan-400 border border-cyan-500/50 rounded hover:bg-cyan-500/30"
-                          title={`${reportCounts.get(testCase.conversation_id)} report(s) available`}
-                        >
-                          {reportCounts.get(testCase.conversation_id)} report{reportCounts.get(testCase.conversation_id)! !== 1 ? 's' : ''}
-                        </button>
-                      )}
                     </div>
                     <div className="text-xs text-slate-500 space-y-1">
                       {testCase.turns.slice(0, 2).map((turn, idx) => (
@@ -1205,11 +1130,6 @@ const AuditView: React.FC<AuditViewProps> = ({ onResult, settings }) => {
                 throw new Error(errorData.error || 'Failed to create report');
               }
 
-              // Refresh report counts
-              const counts = new Map(reportCounts);
-              counts.set(config.conversation_id, (counts.get(config.conversation_id) || 0) + 1);
-              setReportCounts(counts);
-
               setShowCreateReportModal(false);
               setSelectedConversationForReport(null);
               alert('Report created successfully!');
@@ -1247,53 +1167,10 @@ const AuditView: React.FC<AuditViewProps> = ({ onResult, settings }) => {
           }}
           onComplete={(sweepId) => {
             console.log('Parameter sweep completed:', sweepId);
-            // Refresh report counts
-            if (selectedConversationForReport) {
-              const counts = new Map(reportCounts);
-              // Increment count (exact count would come from API)
-              counts.set(selectedConversationForReport.conversation_id, (counts.get(selectedConversationForReport.conversation_id) || 0) + 1);
-              setReportCounts(counts);
-            }
           }}
         />
       )}
 
-      {/* Reports List Modal */}
-      {showReportsListModal && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 rounded-xl border border-slate-700 w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
-            <div className="flex items-center justify-between p-6 border-b border-slate-800">
-              <h2 className="text-xl font-bold text-slate-100">All Reports</h2>
-              <button
-                onClick={() => {
-                  setShowReportsListModal(false);
-                  setSelectedConversationForReport(null);
-                }}
-                className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors"
-              >
-                <X size={20} />
-              </button>
-            </div>
-            <div className="flex-1 overflow-y-auto">
-              <ReportListView
-                conversationId={selectedConversationForReport?.conversation_id}
-                onDeleteReports={async (reportIds) => {
-                  for (const reportId of reportIds) {
-                    await fetch(`/api/audit-reports/${reportId}`, { method: 'DELETE' });
-                  }
-                  // Refresh report counts
-                  const counts = new Map(reportCounts);
-                  if (selectedConversationForReport) {
-                    const current = counts.get(selectedConversationForReport.conversation_id) || 0;
-                    counts.set(selectedConversationForReport.conversation_id, Math.max(0, current - reportIds.length));
-                  }
-                  setReportCounts(counts);
-                }}
-              />
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
