@@ -34,51 +34,39 @@ const App: React.FC = () => {
   const [traces, setTraces] = useState<Trace[]>([]);
   const [tracesLoaded, setTracesLoaded] = useState(false);
 
-  // Load traces from database on mount
+  // Load conversations from database on mount
   useEffect(() => {
     const loadTraces = async () => {
       try {
-        const response = await fetch('/api/audit-results?limit=1000');
+        const response = await fetch('/api/conversations?limit=1000');
         if (response.ok) {
-          const data = await response.json() as { results?: any[]; traces?: any[] };
-          // API returns { results, total, limit, offset }
-          const rawResults = data.results || data.traces || [];
-          if (Array.isArray(rawResults)) {
-            // Convert API audit results to Trace format
-            // API returns camelCase fields
-            const loadedTraces: Trace[] = rawResults.map((t: any) => ({
-              id: t.id,
-              timestamp: t.timestamp || t.createdAt,
-              messageCount: t.messageCount || t.conversation?.length || 0,
-              status: t.status,
-              riskScore: Math.round((t.riskScore || t.overallScore || 0) * (t.riskScore > 1 ? 1 : 100)),
-              detectionEvent: t.detectionEvent,
-              conversation: t.conversation || [],
-              // Include audit metadata
-              auditId: t.auditId,
-              conversationId: t.conversationId,
-              skillId: t.skillId,
-              modelName: t.modelName,
-              overallScore: t.overallScore,
-              confidence: t.confidence,
-              detectedTypes: t.detectedTypes,
-              metrics: t.metrics,
-              recommendations: t.recommendations,
-              limitations: t.limitations,
-              usage: t.usage,
-              // Multi-skill fields
-              skillResults: t.skillResults,
-              combinedScore: t.combinedScore,
-              primaryCategory: t.primaryCategory,
-              secondaryCategories: t.secondaryCategories,
-              detectionMetadata: t.detectionMetadata,
+          const data = await response.json() as { conversations?: any[]; results?: any[] };
+          const rawConversations = data.conversations || data.results || [];
+          if (Array.isArray(rawConversations)) {
+            // Convert conversations to Trace format for the UI
+            const loadedTraces: Trace[] = rawConversations.map((conv: any) => ({
+              id: conv.conversation_id,
+              timestamp: conv.started_at || conv.timestamp,
+              messageCount: conv.turn_count || 0,
+              status: conv.label === 'adversarial' ? 'suspicious' as TraceStatus : 'normal' as TraceStatus,
+              riskScore: conv.expected_manipulation ? 80 : 20,
+              detectionEvent: conv.label === 'adversarial' ? {
+                category: 'Fabricated' as DetectionCategory,
+                timestamp: conv.started_at,
+                context: `Mode: ${conv.chatbot_mode || 'unknown'}`,
+                severity: 'high' as const,
+              } : undefined,
+              conversation: [], // Will be loaded when viewing details
+              conversationId: conv.conversation_id,
+              chatbotMode: conv.chatbot_mode,
+              chatbotModel: conv.chatbot_model,
+              label: conv.label,
             }));
             setTraces(loadedTraces);
           }
         }
       } catch (error) {
-        console.error('Failed to load traces:', error);
-        // Fallback to empty array
+        console.error('Failed to load conversations:', error);
         setTraces([]);
       } finally {
         setTracesLoaded(true);

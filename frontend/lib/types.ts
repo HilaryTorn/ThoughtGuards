@@ -6,6 +6,14 @@ export interface Turn {
   content: string;
   agent_id?: string;
   timestamp?: string;
+  reasoning_content?: string | null;
+  tool_calls?: Array<{
+    tool: string;
+    arguments: any;
+    result: any;
+    timestamp?: string;
+  }>;
+  turn_id?: string;
 }
 
 export interface Conversation {
