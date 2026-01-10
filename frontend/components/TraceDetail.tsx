@@ -5,6 +5,7 @@ import { CATEGORY_STYLES, LEGACY_CATEGORY_MAP, HOW_VERBS, WHY_VERBS, TARGET_VERB
 import DetectedIssuesPanel from './DetectedIssuesPanel';
 import ConversationTurn from './ConversationTurn';
 import InfoTooltip from './InfoTooltip';
+import ToolCallEvidence from './ToolCallEvidence';
 
 // Helper to normalize legacy category names to new HOW verbs
 function normalizeCategory(category: string): DetectionCategory {
@@ -35,6 +36,9 @@ const TraceDetail: React.FC<TraceDetailProps> = ({ trace, onBack, onAction }) =>
 
   // Use actual conversation without mock padding
   const displayConversation: Message[] = trace.conversation;
+
+  // Collect all tool calls from conversation
+  const allToolCalls = displayConversation.flatMap((msg: any) => msg.tool_calls || []);
 
   // Shorten trace ID for display (show last 8 chars if it's a long ID)
   const shortTraceId = trace.id.length > 12 ? `...${trace.id.slice(-8)}` : trace.id;
@@ -323,6 +327,15 @@ const TraceDetail: React.FC<TraceDetailProps> = ({ trace, onBack, onAction }) =>
                    </div>
                  </div>
                </div>
+             )}
+
+             {/* Tool Call Evidence Panel */}
+             {allToolCalls.length > 0 && (
+               <ToolCallEvidence
+                 toolCalls={allToolCalls}
+                 reasoningContent={event?.fullCoT}
+                 messageContent={displayConversation.filter(m => m.role === 'assistant').map(m => m.content).join(' ')}
+               />
              )}
 
           </div>

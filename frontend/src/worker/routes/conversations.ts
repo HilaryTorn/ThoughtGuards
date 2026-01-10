@@ -66,16 +66,33 @@ conversationsRoutes.get('/', async (c) => {
           ORDER BY turn_number
         `).bind(conv.conversation_id).all();
 
-        return {
-          ...conv,
-          turns: (turnsResult.results || []).map((turn: any) => ({
+        // Fetch tool calls for each turn
+        const turnsWithToolCalls = await Promise.all((turnsResult.results || []).map(async (turn: any) => {
+          const toolCallsResult = await db.prepare(`
+            SELECT * FROM tool_calls
+            WHERE turn_id = ?
+            ORDER BY timestamp
+          `).bind(turn.turn_id).all();
+
+          return {
             turn_id: turn.turn_id,
             turn_number: turn.turn_number,
             role: turn.role,
             content: turn.content,
             reasoning_content: turn.reasoning_content,
             timestamp: turn.timestamp,
-          }))
+            tool_calls: (toolCallsResult.results || []).map((tc: any) => ({
+              tool: tc.tool_name,
+              arguments: tc.arguments ? JSON.parse(tc.arguments) : {},
+              result: tc.result ? JSON.parse(tc.result) : null,
+              timestamp: tc.timestamp,
+            })),
+          };
+        }));
+
+        return {
+          ...conv,
+          turns: turnsWithToolCalls
         };
       })
     );
