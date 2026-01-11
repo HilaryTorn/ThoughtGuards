@@ -11,17 +11,21 @@ import Anthropic from "@anthropic-ai/sdk";
  */
 
 /**
- * Check if we should use server-side API (production without BYOK keys)
+ * Check if we should use server-side API for Gemini (no BYOK key)
  */
-function shouldUseServerSideAPI(): boolean {
+function shouldUseServerSideGemini(): boolean {
   if (typeof window === 'undefined') return false;
-
-  // Check if user has provided their own keys
   const hasGeminiKey = !!(localStorage.getItem('BYOK_API_KEY') || localStorage.getItem('GEMINI_API_KEY'));
-  const hasAnthropicKey = !!localStorage.getItem('ANTHROPIC_API_KEY');
+  return !hasGeminiKey;
+}
 
-  // If no keys are set, use server-side API
-  return !hasGeminiKey && !hasAnthropicKey;
+/**
+ * Check if we should use server-side API for Anthropic (no BYOK key)
+ */
+function shouldUseServerSideAnthropic(): boolean {
+  if (typeof window === 'undefined') return false;
+  const hasAnthropicKey = !!localStorage.getItem('ANTHROPIC_API_KEY');
+  return !hasAnthropicKey;
 }
 
 export type AIProvider = 'gemini' | 'anthropic';
@@ -173,8 +177,8 @@ class AIService {
       throw new Error(`Claude model "${params.model}" cannot be used with Gemini API. Use generateWithAnthropic() instead.`);
     }
 
-    // Use server-side API if no BYOK keys are configured
-    if (shouldUseServerSideAPI()) {
+    // Use server-side API if no Gemini key is configured
+    if (shouldUseServerSideGemini()) {
       return this.generateContentViaServer(params);
     }
 
@@ -306,7 +310,7 @@ class AIService {
    */
   private static async generateContentViaServer(params: GenerateContentParameters & { model: string }): Promise<GenerateContentResponse> {
     const startTime = Date.now();
-    const logId = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+    const logId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
 
     const requestLog: RequestLog = {
       id: logId,
@@ -408,8 +412,8 @@ class AIService {
    * Uses server-side API in production (no BYOK keys), or direct API calls with BYOK keys.
    */
   public static async generateWithAnthropic(params: AnthropicGenerateParams): Promise<UnifiedAIResponse> {
-    // Use server-side API if no BYOK keys are configured
-    if (shouldUseServerSideAPI()) {
+    // Use server-side API if no Anthropic key is configured
+    if (shouldUseServerSideAnthropic()) {
       return this.generateWithAnthropicViaServer(params);
     }
 
@@ -512,7 +516,7 @@ class AIService {
    */
   private static async generateWithAnthropicViaServer(params: AnthropicGenerateParams): Promise<UnifiedAIResponse> {
     const startTime = Date.now();
-    const logId = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+    const logId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
 
     const requestLog: RequestLog = {
       id: logId,

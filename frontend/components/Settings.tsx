@@ -379,9 +379,9 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
 
                 {/* Judge B (Optional) */}
                 <div>
-                  <label className="block text-xs text-slate-400 mb-2">Judge B (Optional - enables cross-validation)</label>
+                  <label className="block text-xs text-slate-400 mb-2">Judge B (Cross-validation)</label>
                   <select
-                    value={settings.secondaryJudgeModel || ''}
+                    value={settings.secondaryJudgeModel || 'claude-sonnet-4-20250514'}
                     onChange={(e) => {
                       const value = e.target.value;
                       onUpdate({
@@ -393,14 +393,14 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
                     className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
                   >
                     <option value="">None (single judge)</option>
+                    <optgroup label="Claude">
+                      <option value="claude-sonnet-4-20250514">Claude Sonnet 4 (Recommended)</option>
+                      <option value="claude-3-5-sonnet-latest">Claude 3.5 Sonnet</option>
+                    </optgroup>
                     <optgroup label="Gemini">
                       <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
                       <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
                       <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
-                    </optgroup>
-                    <optgroup label="Claude">
-                      <option value="claude-sonnet-4-20250514">Claude Sonnet 4</option>
-                      <option value="claude-3-5-sonnet-latest">Claude 3.5 Sonnet</option>
                     </optgroup>
                   </select>
                   {settings.secondaryJudgeModel && (
