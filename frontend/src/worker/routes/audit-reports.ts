@@ -53,6 +53,41 @@ auditReportsRoutes.get('/', async (c) => {
 
     const result = await db.prepare(query).bind(...params).all();
 
+    // Fetch cross-validation data for all traces
+    const cvQuery = `
+      SELECT conversation_id, full_result, agreement, cohens_kappa
+      FROM cross_validation_runs
+      WHERE conversation_id IN (${(result.results || []).map(() => '?').join(',')})
+      ORDER BY created_at DESC
+    `;
+    const cvParams = (result.results || []).map((row: any) => row.conversation_id);
+    let cvMap: Record<string, any> = {};
+    if (cvParams.length > 0) {
+      try {
+        const cvResult = await db.prepare(cvQuery).bind(...cvParams).all();
+        // Create a map of conversation_id -> cross validation data
+        for (const cv of (cvResult.results || []) as any[]) {
+          const convId = cv.conversation_id as string;
+          if (!cvMap[convId]) {
+            try {
+              const fullResult = cv.full_result ? JSON.parse(cv.full_result as string) : null;
+              cvMap[convId] = {
+                _meta: fullResult?._meta || {
+                  agreement_rate: cv.agreement ? 1.0 : 0.0,
+                  cohens_kappa: cv.cohens_kappa || 0,
+                },
+                ...fullResult
+              };
+            } catch (e) {
+              console.warn('Failed to parse cross-validation result:', e);
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('Failed to fetch cross-validation data:', e);
+      }
+    }
+
     // Convert to frontend-expected format (matching old audit-results format)
     const traces = (result.results || []).map((row: any) => ({
       id: row.report_id,
@@ -86,6 +121,7 @@ auditReportsRoutes.get('/', async (c) => {
       patterns: row.patterns ? JSON.parse(row.patterns) : undefined,
       createdAt: row.created_at || new Date().toISOString(),
       updatedAt: row.created_at || new Date().toISOString(),
+      crossValidation: cvMap[row.conversation_id] || undefined,
     }));
 
     const reports = (result.results || []).map(convertDbRowToReport);

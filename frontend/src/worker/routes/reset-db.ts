@@ -7,7 +7,89 @@ import type { Env } from '../index';
 
 export const resetDbRoutes = new Hono<{ Bindings: Env }>();
 
-// Reset database
+// Clear ONLY audit-related tables (preserves e-commerce and conversations)
+resetDbRoutes.post('/audit-only', async (c) => {
+  // Require authorization header to prevent accidental resets
+  const authHeader = c.req.header('X-Reset-Authorization');
+  const expectedToken = c.env.RESET_DB_TOKEN || 'CHANGE_ME_IN_PRODUCTION';
+
+  if (authHeader !== expectedToken) {
+    console.warn('[Clear Audit] Unauthorized attempt blocked');
+    return c.json({ error: 'Unauthorized. Set X-Reset-Authorization header.' }, 401);
+  }
+
+  const db = c.env.DB;
+
+  try {
+    console.log('[Clear Audit] Starting audit tables cleanup...');
+
+    // Audit-related tables to clear (order matters for foreign keys)
+    const auditTables = [
+      'calibration_curve_points',
+      'calibration_by_type',
+      'bootstrap_samples',
+      'fingerprint_log',
+      'annotation_priorities',
+      'cross_validation_runs',
+      'model_drift_events',
+      'model_canaries',
+      'calibration_datasets',
+      'ground_truth_labels',
+      'report_cache',
+      'skill_versions',
+      'parameter_sweeps',
+      'aggregate_reports',
+      'audit_runs',
+      'audit_reports',
+      'audit_results',
+    ];
+
+    const results: Record<string, number> = {};
+
+    for (const tableName of auditTables) {
+      try {
+        const result = await db.prepare(`DELETE FROM ${tableName}`).run();
+        results[tableName] = result.meta?.changes || 0;
+        console.log(`[Clear Audit] Cleared ${results[tableName]} rows from ${tableName}`);
+      } catch (error: any) {
+        // Table might not exist, that's OK
+        if (!error.message?.includes('no such table')) {
+          console.warn(`[Clear Audit] Error clearing ${tableName}: ${error.message}`);
+        }
+        results[tableName] = 0;
+      }
+    }
+
+    // Verify preserved data
+    const preserved: Record<string, number> = {};
+    const preserveTables = ['conversations', 'conversation_turns', 'tool_calls', 'customers', 'products', 'orders'];
+
+    for (const tableName of preserveTables) {
+      try {
+        const count = await db.prepare(`SELECT COUNT(*) as count FROM ${tableName}`).first<{ count: number }>();
+        preserved[tableName] = count?.count || 0;
+      } catch {
+        preserved[tableName] = 0;
+      }
+    }
+
+    return c.json({
+      success: true,
+      message: 'Audit tables cleared successfully',
+      clearedTables: results,
+      preservedData: preserved,
+    });
+
+  } catch (error: any) {
+    console.error('[Clear Audit] Error:', error);
+    return c.json({
+      success: false,
+      error: error.message || 'Unknown error during audit cleanup'
+    }, 500);
+  }
+});
+
+// Reset database (FULL reset - drops everything)
 resetDbRoutes.post('/', async (c) => {
   // Require authorization header to prevent accidental resets
   const authHeader = c.req.header('X-Reset-Authorization');

@@ -1,12 +1,54 @@
 import { GoogleGenAI, GenerateContentParameters, GenerateContentResponse, Type } from "@google/genai";
+import Anthropic from "@anthropic-ai/sdk";
 
 /**
  * AI service "Factory Proxy" to centralize all LLM interactions.
- * Handles token tracking, cost calculation, and strictly uses process.env.API_KEY.
+ * Supports multiple providers: Gemini (Google) and Anthropic (Claude).
+ * Handles token tracking, cost calculation, and API key management.
  */
+
+export type AIProvider = 'gemini' | 'anthropic';
 
 type UsageCallback = (usage: TokenUsage, model: string) => void;
 type RequestLogCallback = (log: RequestLog) => void;
+
+/**
+ * Detect provider from model name.
+ */
+export function getProviderFromModel(model: string): AIProvider {
+  console.log(`[getProviderFromModel] Input model: "${model}", type: ${typeof model}`);
+  const isClaudeModel = model && typeof model === 'string' && model.startsWith('claude-');
+  const provider = isClaudeModel ? 'anthropic' : 'gemini';
+  console.log(`[getProviderFromModel] Result: ${provider} (isClaudeModel: ${isClaudeModel})`);
+  return provider;
+}
+
+/**
+ * Parameters for Anthropic content generation.
+ */
+export interface AnthropicGenerateParams {
+  model: string;
+  messages: Array<{ role: 'user' | 'assistant'; content: string }>;
+  system?: string;
+  max_tokens?: number;
+  temperature?: number;
+  top_p?: number;
+}
+
+/**
+ * Unified response format for both providers.
+ */
+export interface UnifiedAIResponse {
+  text: string;
+  provider: AIProvider;
+  model: string;
+  usage?: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+  };
+  rawResponse?: any;
+}
 
 export interface TokenUsage {
   prompt_tokens: number;
@@ -68,9 +110,9 @@ class AIService {
   }
 
   /**
-   * Get the active API key, checking BYOK first, then environment variable.
+   * Get the Gemini API key, checking BYOK first, then environment variable.
    */
-  private static getApiKey(): string {
+  private static getGeminiApiKey(): string {
     // Check for BYOK (Bring Your Own Key) in localStorage first
     if (typeof window !== 'undefined') {
       const byokKey = localStorage.getItem('BYOK_API_KEY') || localStorage.getItem('GEMINI_API_KEY');
@@ -83,10 +125,37 @@ class AIService {
   }
 
   /**
+   * Get the Anthropic API key, checking localStorage first, then environment variable.
+   */
+  private static getAnthropicApiKey(): string {
+    if (typeof window !== 'undefined') {
+      const key = localStorage.getItem('ANTHROPIC_API_KEY');
+      if (key && key.trim().length > 0) {
+        return key.trim();
+      }
+    }
+    return process.env.ANTHROPIC_API_KEY || '';
+  }
+
+  /**
+   * Legacy method for backward compatibility.
+   */
+  private static getApiKey(): string {
+    return this.getGeminiApiKey();
+  }
+
+  /**
    * Centralized content generation.
    * Creates a fresh GoogleGenAI instance right before making an API call to ensure it always uses the most up-to-date API key.
    */
   public static async generateContent(params: GenerateContentParameters & { model: string }): Promise<GenerateContentResponse> {
+    // Safeguard: Prevent Claude models from being sent to Gemini API
+    if (params.model.startsWith('claude-')) {
+      console.error(`[AIService.generateContent] ERROR: Claude model "${params.model}" was passed to Gemini API!`);
+      console.error('[AIService.generateContent] This is a bug - Claude models should use generateWithAnthropic()');
+      throw new Error(`Claude model "${params.model}" cannot be used with Gemini API. Use generateWithAnthropic() instead.`);
+    }
+
     const apiKey = this.getApiKey();
     const ai = new GoogleGenAI({ apiKey });
     const startTime = Date.now();
@@ -211,7 +280,7 @@ class AIService {
   }
 
   /**
-   * Streamed content generation.
+   * Streamed content generation (Gemini only).
    */
   public static async *generateContentStream(params: GenerateContentParameters & { model: string }) {
     const apiKey = this.getApiKey();
@@ -233,6 +302,161 @@ class AIService {
       }
       yield chunk;
     }
+  }
+
+  /**
+   * Generate content using Anthropic Claude models.
+   */
+  public static async generateWithAnthropic(params: AnthropicGenerateParams): Promise<UnifiedAIResponse> {
+    const apiKey = this.getAnthropicApiKey();
+    if (!apiKey) {
+      throw new Error('ANTHROPIC_API_KEY not configured. Please add it in Settings.');
+    }
+
+    const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
+    const startTime = Date.now();
+    const logId = typeof crypto !== 'undefined' && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+    // Prepare request log
+    const requestLog: RequestLog = {
+      id: logId,
+      timestamp: new Date().toISOString(),
+      model: params.model,
+      request: {
+        contents: JSON.stringify(params.messages, null, 2),
+        config: { system: params.system, max_tokens: params.max_tokens, temperature: params.temperature }
+      }
+    };
+
+    try {
+      const response = await client.messages.create({
+        model: params.model,
+        max_tokens: params.max_tokens || 4096,
+        system: params.system,
+        messages: params.messages,
+        temperature: params.temperature,
+        top_p: params.top_p,
+      });
+
+      const duration = Date.now() - startTime;
+
+      // Extract text from response
+      let text = '';
+      for (const block of response.content) {
+        if (block.type === 'text') {
+          text += block.text;
+        }
+      }
+
+      // Track usage
+      const usage = {
+        prompt_tokens: response.usage.input_tokens,
+        completion_tokens: response.usage.output_tokens,
+        total_tokens: response.usage.input_tokens + response.usage.output_tokens,
+      };
+
+      this.notifyUsage({
+        prompt_tokens: usage.prompt_tokens,
+        candidates_tokens: usage.completion_tokens,
+        total_tokens: usage.total_tokens,
+      }, params.model);
+
+      requestLog.usage = {
+        prompt_tokens: usage.prompt_tokens,
+        candidates_tokens: usage.completion_tokens,
+        total_tokens: usage.total_tokens,
+      };
+      requestLog.response = { text, fullResponse: response };
+      requestLog.duration = duration;
+      this.notifyRequestLog(requestLog);
+
+      return {
+        text,
+        provider: 'anthropic',
+        model: params.model,
+        usage,
+        rawResponse: response,
+      };
+    } catch (error: any) {
+      const duration = Date.now() - startTime;
+
+      let errorMessage = error?.message || String(error);
+      if (error?.status) {
+        errorMessage = `${error.status}: ${errorMessage}`;
+      }
+
+      // Enhanced error logging for Anthropic API errors
+      console.error(`[Anthropic API Error] Model: ${params.model}, Status: ${error?.status || 'unknown'}`);
+      console.error(`[Anthropic API Error] Message: ${errorMessage}`);
+      if (error?.error) {
+        console.error(`[Anthropic API Error] Details:`, error.error);
+      }
+
+      requestLog.error = errorMessage;
+      requestLog.duration = duration;
+      this.notifyRequestLog(requestLog);
+
+      throw error;
+    }
+  }
+
+  /**
+   * Unified content generation that auto-detects provider from model name.
+   * Use this for provider-agnostic code.
+   */
+  public static async generateUnified(params: {
+    model: string;
+    prompt: string;
+    systemPrompt?: string;
+    maxTokens?: number;
+    temperature?: number;
+    topP?: number;
+    responseFormat?: 'text' | 'json';
+  }): Promise<UnifiedAIResponse> {
+    const provider = getProviderFromModel(params.model);
+
+    if (provider === 'anthropic') {
+      return this.generateWithAnthropic({
+        model: params.model,
+        messages: [{ role: 'user', content: params.prompt }],
+        system: params.systemPrompt,
+        max_tokens: params.maxTokens || 4096,
+        temperature: params.temperature,
+        top_p: params.topP,
+      });
+    }
+
+    // Gemini
+    const response = await this.generateContent({
+      model: params.model,
+      contents: params.prompt,
+      config: {
+        systemInstruction: params.systemPrompt,
+        maxOutputTokens: params.maxTokens,
+        temperature: params.temperature,
+        topP: params.topP,
+        responseMimeType: params.responseFormat === 'json' ? 'application/json' : undefined,
+      }
+    });
+
+    let text = response.text || '';
+    if (!text && (response as any).candidates?.[0]?.content?.parts?.[0]?.text) {
+      text = (response as any).candidates[0].content.parts[0].text;
+    }
+
+    return {
+      text,
+      provider: 'gemini',
+      model: params.model,
+      usage: response.usageMetadata ? {
+        prompt_tokens: response.usageMetadata.promptTokenCount || 0,
+        completion_tokens: response.usageMetadata.candidatesTokenCount || 0,
+        total_tokens: response.usageMetadata.totalTokenCount || 0,
+      } : undefined,
+      rawResponse: response,
+    };
   }
 }
 

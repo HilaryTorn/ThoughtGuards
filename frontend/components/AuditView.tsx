@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Play, CheckCircle, AlertTriangle, Loader2, FileText, X, Search, Filter, Eye, PlayCircle, Pause, ChevronLeft, ChevronRight, Clock, Zap, CheckSquare, Square, Plus, BarChart3, List, ExternalLink } from 'lucide-react';
 import { EnrichedTestCase, AuditResult, Skill, Conversation } from '../lib/types';
-import { executeMultiSkillAudit } from '../lib/multiSkillExecutor';
+import { executeMultiSkillAuditWithCrossValidation } from '../lib/multiSkillExecutor';
 import { executeMultiRunAudit, RunConfig } from '../lib/multiRunExecutor';
 import { loadAllTestCases } from '../lib/loadTestCases';
 import { AppSettings } from '../types';
@@ -370,21 +370,26 @@ const AuditView: React.FC<AuditViewProps> = ({ onResult, settings }) => {
           runConfig,
           {
             sensitivity: settings.sensitivity,
-            thinkingBudget: settings.thinkingBudget,
-            includeValidatorCoT: settings.includeValidatorCoT,
+            includeValidatorCoT: true, // Always include CoT
           }
         );
-        
+
         result = multiRunResult;
       } else {
-        // Use single-run intelligent multi-skill execution
-        result = await executeMultiSkillAudit(
+        // Use single-run intelligent multi-skill execution (with optional cross-validation)
+        console.log('[AuditView] Settings for audit:', {
+          auditorModel: settings.auditorModel,
+          enableCrossValidation: settings.enableCrossValidation,
+          secondaryJudgeModel: settings.secondaryJudgeModel,
+        });
+        result = await executeMultiSkillAuditWithCrossValidation(
           testCase,
           settings.auditorModel,
           {
             sensitivity: settings.sensitivity,
-            thinkingBudget: settings.thinkingBudget,
-            includeValidatorCoT: settings.includeValidatorCoT,
+            includeValidatorCoT: true, // Always include CoT
+            enableCrossValidation: settings.enableCrossValidation,
+            secondaryJudgeModel: settings.secondaryJudgeModel,
           }
         );
       }
@@ -425,13 +430,16 @@ const AuditView: React.FC<AuditViewProps> = ({ onResult, settings }) => {
         };
 
         // Build audit report in new format
+        const reportId = result.id || `audit-${testCase.conversation_id}-${Date.now()}`;
+        const skillId = result.skill_id || 'taxonomy-auditor';
+
         const auditReport = {
-          report_id: result.id,
+          report_id: reportId,
           conversation_id: result.conversation_id || testCase.conversation_id,
           created_at: now,
           created_by: null,
           execution_duration_ms: null,
-          skill_id: result.skill_id,
+          skill_id: skillId,
           skill_version: '1.0.0', // Default version
           model_name: result.model_name,
           model_version: null,
@@ -480,7 +488,23 @@ const AuditView: React.FC<AuditViewProps> = ({ onResult, settings }) => {
           report_id: auditReport.report_id,
           conversation_id: auditReport.conversation_id,
           skill_id: auditReport.skill_id,
+          result_id: result.id,
+          result_conversation_id: result.conversation_id,
+          result_skill_id: result.skill_id,
+          testCase_conversation_id: testCase.conversation_id,
         });
+
+        // Validate before sending - if any field is missing, skip the save
+        if (!auditReport.report_id || !auditReport.conversation_id || !auditReport.skill_id) {
+          console.error('Missing required fields in audit report - SKIPPING SAVE:', {
+            report_id: auditReport.report_id,
+            conversation_id: auditReport.conversation_id,
+            skill_id: auditReport.skill_id,
+            result_keys: Object.keys(result || {}),
+            testCase_keys: Object.keys(testCase || {}),
+          });
+          throw new Error('Missing required fields - cannot save to database');
+        }
 
         const response = await fetch('/api/audit-reports', {
           method: 'POST',

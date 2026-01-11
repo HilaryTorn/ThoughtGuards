@@ -1,8 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Settings as SettingsIcon, Sliders, AlertCircle, ToggleLeft, ToggleRight, Eye, EyeOff, Database, Loader2 } from 'lucide-react';
-import { AppSettings, DetectionCategory } from '../types';
-import { CATEGORY_STYLES } from '../constants';
-import { AVAILABLE_SKILLS, CATEGORY_TO_SKILL } from '../lib/skillsRegistry';
+import { Settings as SettingsIcon, Sliders, AlertCircle, Eye, EyeOff, Database, Loader2 } from 'lucide-react';
+import { AppSettings } from '../types';
 
 interface SettingsProps {
   settings: AppSettings;
@@ -17,7 +15,7 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
     message?: string;
   }>>({});
   const [availableGeminiModels, setAvailableGeminiModels] = useState<Array<{ name: string; displayName: string }>>([]);
-  const [activeSection, setActiveSection] = useState<string>('detection-models');
+  const [activeSection, setActiveSection] = useState<string>('auditor-config');
   const sectionRefs = useRef<Record<string, HTMLElement | null>>({});
 
   const validateApiKey = useCallback(async (key: string, value: string): Promise<void> => {
@@ -89,13 +87,47 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
         } else {
           throw new Error('Invalid API response');
         }
+      } else if (key === 'anthropic') {
+        // Test Anthropic API key with a simple messages request
+        const response = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': value,
+            'anthropic-version': '2023-06-01',
+            'anthropic-dangerous-direct-browser-access': 'true'
+          },
+          body: JSON.stringify({
+            model: 'claude-haiku-4-5-20251001',
+            max_tokens: 1,
+            messages: [{ role: 'user', content: 'Hi' }]
+          })
+        });
+
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({}));
+          if (response.status === 401) {
+            throw new Error('Invalid API key');
+          } else if (response.status === 403) {
+            throw new Error('API key lacks permissions');
+          }
+          throw new Error(error.error?.message || `API returned ${response.status}`);
+        }
+
+        setApiKeyValidation(prev => ({
+          ...prev,
+          [key]: {
+            status: 'valid',
+            message: '✓ Valid (Claude API connected)'
+          }
+        }));
       } else {
         // For other providers, we could add validation later
-        setApiKeyValidation(prev => ({ 
-          ...prev, 
-          [key]: { status: 'idle' } 
-      }));
-    }
+        setApiKeyValidation(prev => ({
+          ...prev,
+          [key]: { status: 'idle' }
+        }));
+      }
     } catch (error: any) {
       const errorMessage = error.message || 'Validation failed';
       setApiKeyValidation(prev => ({ 
@@ -229,30 +261,8 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
       await validateApiKey(key, value);
     }
   };
-  
-  const toggleCategory = (cat: DetectionCategory) => {
-    onUpdate({
-      ...settings,
-      categories: {
-        ...settings.categories,
-        [cat]: !settings.categories[cat]
-      }
-    });
-  };
-
-
-  const setSkillForCategory = (cat: DetectionCategory, skillId: string) => {
-    onUpdate({
-      ...settings,
-      activeSkills: {
-        ...settings.activeSkills,
-        [cat]: skillId
-      }
-    });
-  };
 
   const sections = [
-    { id: 'detection-models', label: 'Active Detection Models', icon: Sliders },
     { id: 'auditor-config', label: 'Auditor Configuration', icon: Sliders },
     { id: 'api-keys', label: 'API Key Configuration', icon: Sliders },
     { id: 'database-management', label: 'Database Management', icon: Database },
@@ -302,76 +312,6 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
           <p className="text-slate-500 mt-2">Manage detection parameters and alerting thresholds.</p>
         </div>
 
-        {/* Category Toggles */}
-        <div 
-          id="detection-models"
-          ref={(el) => (sectionRefs.current['detection-models'] = el)}
-          className="glass-panel p-6 rounded-xl border-slate-800 scroll-mt-24"
-        >
-          <h3 className="text-lg font-semibold text-slate-200 mb-6 flex items-center gap-2">
-            <Sliders size={20} className="text-cyan-500" />
-            Active Detection Models
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {Object.entries(CATEGORY_STYLES).map(([key, style]) => {
-              const category = key as DetectionCategory;
-              const isEnabled = settings.categories[category];
-              const currentSkillId = settings.activeSkills?.[category] || CATEGORY_TO_SKILL[category] || AVAILABLE_SKILLS[0].id;
-              const currentSkill = AVAILABLE_SKILLS.find(s => s.id === currentSkillId);
-              
-              return (
-                <div 
-                  key={key}
-                  className={`
-                    p-4 rounded-lg border transition-all
-                    ${isEnabled 
-                      ? 'bg-slate-900/50 border-slate-700' 
-                      : 'bg-slate-950 border-slate-800 opacity-60'
-                    }
-                  `}
-                >
-                  <div 
-                    onClick={() => toggleCategory(category)}
-                    className="flex items-center justify-between mb-3 cursor-pointer"
-                  >
-                    <div className="flex items-center gap-3">
-                       <div className={`p-2 rounded ${isEnabled ? style.bgColor : 'bg-slate-800'}`}>
-                          <div className={`w-4 h-4 rounded-full ${isEnabled ? style.color.replace('text-', 'bg-') : 'bg-slate-600'}`}></div>
-                       </div>
-                       <span className={`font-medium ${isEnabled ? 'text-slate-200' : 'text-slate-500'}`}>{style.label}</span>
-                    </div>
-                    {isEnabled 
-                      ? <ToggleRight size={28} className="text-cyan-500" /> 
-                      : <ToggleLeft size={28} className="text-slate-600" />
-                    }
-                  </div>
-                  
-                  {isEnabled && (
-                    <div className="mt-3 pt-3 border-t border-slate-700">
-                      <label className="text-xs text-slate-400 mb-2 block">Audit Skill</label>
-                      <select
-                        value={currentSkillId}
-                        onChange={(e) => setSkillForCategory(category, e.target.value)}
-                        onClick={(e) => e.stopPropagation()}
-                        className="w-full bg-slate-950 border border-slate-700 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
-                      >
-                        {AVAILABLE_SKILLS.map(skill => (
-                          <option key={skill.id} value={skill.id}>
-                            {skill.name}
-                          </option>
-                        ))}
-                      </select>
-                      {currentSkill && (
-                        <p className="text-xs text-slate-500 mt-1">{currentSkill.description}</p>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
         {/* Auditor Configuration */}
         <div 
           id="auditor-config"
@@ -407,155 +347,70 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
           ) : null}
           
           <div className={`grid grid-cols-1 md:grid-cols-2 gap-6 ${(!apiKeys.gemini || apiKeys.gemini.trim() === '') ? 'pointer-events-none' : ''}`}>
-            <div>
-              <label className={`block text-sm font-medium mb-2 ${(!apiKeys.gemini || apiKeys.gemini.trim() === '') ? 'text-slate-500' : 'text-slate-300'}`}>
-                Auditor Model
-              </label>
-              <select
-                value={settings.auditorModel || (availableGeminiModels.length > 0 ? availableGeminiModels[0].name : 'gemini-3-flash-preview')}
-                onChange={(e) => onUpdate({ ...settings, auditorModel: e.target.value })}
-                disabled={!apiKeys.gemini || apiKeys.gemini.trim() === '' || (availableGeminiModels.length === 0 && apiKeyValidation.gemini?.status !== 'validating')}
-                className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {availableGeminiModels.length > 0 ? (
-                  availableGeminiModels.map((model) => (
-                    <option key={model.name} value={model.name}>
-                      {model.displayName}
-                    </option>
-                  ))
-                ) : (
-                  <>
-                    <option value="gemini-3-flash-preview">Gemini 3 Flash Preview</option>
-                    <option value="gemini-3-pro-preview">Gemini 3 Pro Preview</option>
-                    <option value="gemini-flash-lite-latest">Gemini Flash Lite</option>
-                    <option value="gemini-2.0-flash-exp">Gemini 2.0 Flash Experimental</option>
-                  </>
-                )}
-              </select>
-              <p className="text-xs text-slate-500 mt-1">
-                {availableGeminiModels.length > 0 
-                  ? `Model used for running audits (${availableGeminiModels.length} models available for your API key)`
-                  : 'Model used for running audits. Enter and validate your API key to see available models.'}
-              </p>
-            </div>
-            
-            <div>
-              <label className={`block text-sm font-medium mb-2 ${(!apiKeys.gemini || apiKeys.gemini.trim() === '') ? 'text-slate-500' : 'text-slate-300'}`}>
-                Thinking Budget {settings.thinkingBudget !== undefined && `(${settings.thinkingBudget})`}
-              </label>
-              <div className="flex gap-2">
-                <input
-                  type="number"
-                  min="0"
-                  max="10000"
-                  step="100"
-                  value={settings.thinkingBudget || ''}
-                  onChange={(e) => onUpdate({ 
-                    ...settings, 
-                    thinkingBudget: e.target.value ? parseInt(e.target.value) : undefined 
-                  })}
-                  disabled={!apiKeys.gemini || apiKeys.gemini.trim() === ''}
-                  placeholder="Optional"
-                  className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 disabled:opacity-50 disabled:cursor-not-allowed"
-                />
-                <button
-                  onClick={() => onUpdate({ ...settings, thinkingBudget: undefined })}
-                  disabled={!apiKeys.gemini || apiKeys.gemini.trim() === ''}
-                  className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Clear
-                </button>
-              </div>
-              <p className="text-xs text-slate-500 mt-1">Token budget for reasoning models (optional)</p>
-            </div>
-
-            {/* Multi-Run Statistical Analysis */}
-            <div className="md:col-span-2 space-y-2">
+            {/* LLM Judge Configuration */}
+            <div className="md:col-span-2 space-y-4">
               <label className="block text-sm font-medium text-slate-300">
-                Multi-Run Statistical Analysis
+                LLM Judge Models
               </label>
+              <p className="text-xs text-slate-500 mb-2">
+                Select which models to use for audit judgments. If Judge B is selected, both judges run and results are cross-validated.
+              </p>
+
               <div className="bg-slate-900/50 border border-slate-700 rounded-lg p-4 space-y-4">
+                {/* Judge A (Primary) */}
                 <div>
-                  <label className="block text-xs text-slate-400 mb-2">
-                    Number of Runs (1 = single-run, no statistical analysis)
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="100"
-                    value={settings.multiRunCount || 1}
-                    onChange={(e) => onUpdate({ 
-                      ...settings, 
-                      multiRunCount: Math.max(1, parseInt(e.target.value) || 1)
-                    })}
+                  <label className="block text-xs text-slate-400 mb-2">Judge A (Primary)</label>
+                  <select
+                    value={settings.auditorModel || 'gemini-2.5-flash-preview-05-20'}
+                    onChange={(e) => onUpdate({ ...settings, auditorModel: e.target.value })}
                     disabled={!apiKeys.gemini || apiKeys.gemini.trim() === ''}
                     className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 disabled:opacity-50 disabled:cursor-not-allowed"
-                  />
-                  <p className="text-xs text-slate-500 mt-1">
-                    Run multiple audits with variation to calculate statistical distributions (mean, stddev, quantiles, confidence intervals)
-                  </p>
+                  >
+                    <optgroup label="Gemini">
+                      <option value="gemini-2.5-flash-preview-05-20">Gemini 2.5 Flash (Recommended)</option>
+                      <option value="gemini-2.5-pro-preview-05-06">Gemini 2.5 Pro</option>
+                      <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
+                    </optgroup>
+                    <optgroup label="Claude (requires Anthropic key)">
+                      <option value="claude-sonnet-4-20250514">Claude Sonnet 4</option>
+                      <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5</option>
+                    </optgroup>
+                  </select>
                 </div>
-                
-                {(settings.multiRunCount || 1) > 1 && (
-                  <>
-                    <div>
-                      <label className="block text-xs text-slate-400 mb-2">
-                        Temperature (optional, for variation)
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        max="2"
-                        step="0.1"
-                        value={settings.multiRunTemperature || ''}
-                        onChange={(e) => onUpdate({ 
-                          ...settings, 
-                          multiRunTemperature: e.target.value ? parseFloat(e.target.value) : undefined 
-                        })}
-                        disabled={!apiKeys.gemini || apiKeys.gemini.trim() === ''}
-                        placeholder="Optional (e.g., 0.7)"
-                        className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 disabled:opacity-50 disabled:cursor-not-allowed"
-                      />
-                    </div>
-                    
-                    <div>
-                      <label className="block text-xs text-slate-400 mb-2">
-                        Seed (optional, for reproducibility)
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        value={settings.multiRunSeed || ''}
-                        onChange={(e) => onUpdate({ 
-                          ...settings, 
-                          multiRunSeed: e.target.value ? parseInt(e.target.value) : undefined 
-                        })}
-                        disabled={!apiKeys.gemini || apiKeys.gemini.trim() === ''}
-                        placeholder="Optional (e.g., 42)"
-                        className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 disabled:opacity-50 disabled:cursor-not-allowed"
-                      />
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
-            
-            <div className="md:col-span-2">
-              <label className={`flex items-center gap-3 ${(!apiKeys.gemini || apiKeys.gemini.trim() === '') ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}>
-                <input
-                  type="checkbox"
-                  checked={settings.includeValidatorCoT !== false}
-                  onChange={(e) => onUpdate({ ...settings, includeValidatorCoT: e.target.checked })}
-                  disabled={!apiKeys.gemini || apiKeys.gemini.trim() === ''}
-                  className="w-4 h-4 rounded border-slate-700 bg-slate-900 text-cyan-500 focus:ring-cyan-500 focus:ring-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                />
+
+                {/* Judge B (Optional) */}
                 <div>
-                  <span className={`text-sm font-medium ${(!apiKeys.gemini || apiKeys.gemini.trim() === '') ? 'text-slate-500' : 'text-slate-300'}`}>Include Validator Chain-of-Thought</span>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    When enabled, the auditor will analyze both the conversation and any internal reasoning traces (fullCoT) from validators
-                  </p>
+                  <label className="block text-xs text-slate-400 mb-2">Judge B (Optional - enables cross-validation)</label>
+                  <select
+                    value={settings.secondaryJudgeModel || ''}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      onUpdate({
+                        ...settings,
+                        secondaryJudgeModel: value || undefined,
+                        enableCrossValidation: !!value // Auto-enable if judge B selected
+                      });
+                    }}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
+                  >
+                    <option value="">None (single judge)</option>
+                    <optgroup label="Gemini">
+                      <option value="gemini-2.5-flash-preview-05-20">Gemini 2.5 Flash</option>
+                      <option value="gemini-2.5-pro-preview-05-06">Gemini 2.5 Pro</option>
+                      <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
+                    </optgroup>
+                    <optgroup label="Claude (requires Anthropic key)">
+                      <option value="claude-sonnet-4-20250514">Claude Sonnet 4</option>
+                      <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5</option>
+                    </optgroup>
+                  </select>
+                  {settings.secondaryJudgeModel && (
+                    <p className="text-xs text-cyan-400 mt-2">
+                      Cross-validation enabled: Both judges will analyze the conversation and results will be compared.
+                    </p>
+                  )}
                 </div>
-              </label>
+              </div>
             </div>
           </div>
         </div>
@@ -677,13 +532,26 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
                   Anthropic Claude API Key (Optional)
                 </label>
                 <div className="flex gap-2">
-                  <input
-                    type={showApiKeys.anthropic ? 'text' : 'password'}
-                    value={apiKeys.anthropic}
-                    onChange={(e) => updateApiKey('anthropic', e.target.value)}
-                    placeholder="Enter Anthropic API key (optional)"
-                    className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
-                  />
+                  <div className="relative flex-1">
+                    <input
+                      type={showApiKeys.anthropic ? 'text' : 'password'}
+                      value={apiKeys.anthropic}
+                      onChange={(e) => updateApiKey('anthropic', e.target.value)}
+                      placeholder="Enter Anthropic API key (optional)"
+                      className={`w-full bg-slate-950 border rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 ${
+                        apiKeyValidation.anthropic?.status === 'valid'
+                          ? 'border-green-500/50'
+                          : apiKeyValidation.anthropic?.status === 'invalid'
+                          ? 'border-red-500/50'
+                          : 'border-slate-700'
+                      }`}
+                    />
+                    {apiKeyValidation.anthropic?.status === 'validating' && (
+                      <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                        <Loader2 size={16} className="animate-spin text-cyan-500" />
+                      </div>
+                    )}
+                  </div>
                   <button
                     onClick={() => setShowApiKeys({ ...showApiKeys, anthropic: !showApiKeys.anthropic })}
                     className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-sm transition-colors"
@@ -691,8 +559,35 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
                   >
                     {showApiKeys.anthropic ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>
+                  {apiKeys.anthropic && (
+                    <button
+                      onClick={() => validateApiKey('anthropic', apiKeys.anthropic)}
+                      disabled={apiKeyValidation.anthropic?.status === 'validating'}
+                      className="px-3 py-2 bg-cyan-600 hover:bg-cyan-700 disabled:bg-slate-700 disabled:cursor-not-allowed text-white rounded-lg text-sm transition-colors"
+                      title="Test API key"
+                    >
+                      {apiKeyValidation.anthropic?.status === 'validating' ? (
+                        <Loader2 size={16} className="animate-spin" />
+                      ) : (
+                        'Test'
+                      )}
+                    </button>
+                  )}
                 </div>
-                <p className="text-xs text-slate-500 mt-1">For Claude models</p>
+                {apiKeyValidation.anthropic?.message && (
+                  <p className={`text-xs mt-1 ${
+                    apiKeyValidation.anthropic.status === 'valid'
+                      ? 'text-green-400'
+                      : apiKeyValidation.anthropic.status === 'invalid'
+                      ? 'text-red-400'
+                      : 'text-slate-500'
+                  }`}>
+                    {apiKeyValidation.anthropic.message}
+                  </p>
+                )}
+                {!apiKeyValidation.anthropic?.message && (
+                  <p className="text-xs text-slate-500 mt-1">For Claude models (used as Judge A or B)</p>
+                )}
               </div>
 
               <div>

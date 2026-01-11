@@ -135,6 +135,12 @@ export interface Trace {
     why?: { code: WHYCode; verb: string; name: string };
     target?: { code: TARGETCode; verb: string; name: string };
   }>;
+  // Cross-validation data (if available)
+  crossValidation?: CrossValidationResult;
+  // Additional metadata
+  chatbotMode?: string;
+  chatbotModel?: string;
+  label?: string;
 }
 
 export interface CategoryStyle {
@@ -170,6 +176,9 @@ export interface AppSettings {
   numRuns?: number; // Number of runs for multi-run audits
   temperature?: number; // Temperature for multi-run audits
   seed?: number; // Seed for multi-run audits
+  // Cross-validation / Multi-judge settings
+  enableCrossValidation?: boolean; // Whether to run two judges and compare
+  secondaryJudgeModel?: string; // Model for secondary judge (e.g., "claude-sonnet-4-20250514")
 }
 
 // ============================================================================
@@ -637,3 +646,136 @@ export type ExtendedTrace = Trace & {
     };
   };
 };
+
+// ============================================================================
+// Cross-Validation / Multi-Judge System Types
+// ============================================================================
+
+export type AIProvider = 'gemini' | 'anthropic';
+
+/**
+ * Confidence breakdown showing how final confidence was calculated.
+ * Formula: final = base × agreement × evidence × calibration
+ */
+export interface ConfidenceBreakdown {
+  final_confidence: number;
+  base_confidence: number;
+  agreement_factor: number;   // 1.2 exact, 0.7-1.2 partial, 0.6 single
+  evidence_factor: number;    // 0.8-1.2 based on quote quality
+  calibration_factor: number; // How well judges align on confidence/severity
+  breakdown: string;          // Human-readable formula
+}
+
+/**
+ * Shows which axes differed between judges for partial matches.
+ */
+export interface AxisDisagreement {
+  [axis: string]: {
+    j1: string;  // Judge 1's label
+    j2: string;  // Judge 2's label
+  };
+}
+
+/**
+ * Individual judge result before aggregation.
+ */
+export interface JudgeResult {
+  model: string;
+  patterns: Array<{
+    triad_pattern_id: string;
+    labels: { TARGET: TARGETCode; HOW: HOWCode; WHY: WHYCode };
+    short_desc: string;
+    prominence: number;
+    confidence: number;
+    severity?: number;
+    quotes: Array<{
+      speaker: string;
+      message_index: number;
+      text: string;
+    }>;
+    evidence_notes?: string;
+  }>;
+  overall_score?: number;
+  confidence?: 'low' | 'medium' | 'high';
+  _tokens_used?: number;
+}
+
+/**
+ * Metadata about cross-validation agreement between two judges.
+ */
+export interface CrossValidationMeta {
+  judge_1_model: string;
+  judge_2_model: string;
+  judge_1_tokens: number;
+  judge_2_tokens: number;
+
+  // Agreement metrics
+  agreement_type: 'full' | 'strong' | 'partial' | 'weak' | 'none' | 'both_clean';
+  agreement_rate: number;      // 0.0 to 1.0
+  exact_matches: number;       // Both judges agree on all 3 axes
+  partial_matches: number;     // Judges agree on some axes
+  unmatched_j1: number;        // Only judge 1 detected
+  unmatched_j2: number;        // Only judge 2 detected
+  mean_similarity: number;
+
+  // Config used
+  axis_weights: { HOW: number; TARGET: number; WHY: number };
+  partial_match_threshold: number;
+
+  // Pattern lists
+  patterns_judge_1: string[];  // triad IDs
+  patterns_judge_2: string[];
+}
+
+/**
+ * Pattern with aggregation metadata from cross-validation.
+ */
+export interface AggregatedPattern {
+  triad_pattern_id: string;
+  labels: { TARGET: TARGETCode; HOW: HOWCode; WHY: WHYCode };
+  short_desc: string;
+  prominence: number;
+  confidence: number;  // Final calculated confidence
+  severity?: number;
+  quotes: Array<{
+    speaker: string;
+    message_index: number;
+    text: string;
+  }>;
+  evidence_notes?: string;
+
+  // Match metadata
+  _match_type: 'exact' | 'partial' | 'single_judge';
+  _matched_with?: string;        // The pattern it matched (for exact/partial)
+  _similarity?: number;          // For partial matches (0.5-1.0)
+  _detected_by?: 'judge_1' | 'judge_2';  // For single_judge only
+  _axis_disagreement?: AxisDisagreement; // Which axes differed (for partial)
+
+  // Confidence calculation
+  _confidence_breakdown: ConfidenceBreakdown;
+}
+
+/**
+ * Full cross-validation result from running two judges on one conversation.
+ */
+export interface CrossValidationResult {
+  conversation_id: string;
+  manipulation_evaluations: Array<{
+    evaluator_id: string;
+    evaluator_type: string;
+    model_name: string;
+    created_at: string;
+    patterns: AggregatedPattern[];
+    notes: string;
+  }>;
+  _meta: CrossValidationMeta;
+  _judge_1_result: JudgeResult;
+  _judge_2_result: JudgeResult;
+  _source?: {
+    file?: string;
+    chatbot_mode?: string;
+    chatbot_model?: string;
+    persona_id?: string;
+    analyzed_at?: string;
+  };
+}
