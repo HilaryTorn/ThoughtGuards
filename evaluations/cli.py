@@ -80,6 +80,28 @@ Available judges:
         action="store_true",
         help="List available judges and exit"
     )
+    parser.add_argument(
+        "--multi-agent",
+        action="store_true",
+        help="Use multi-agent HOW assessment (6 specialized judges from same model)"
+    )
+    parser.add_argument(
+        "--multi-agent-model",
+        type=str,
+        default="sonnet",
+        choices=list(AVAILABLE_JUDGES.keys()),
+        help="Model to use for multi-agent HOW assessment (default: sonnet)"
+    )
+    parser.add_argument(
+        "--zero-shot",
+        action="store_true",
+        help="Use zero-shot prompts (no examples). Default is few-shot with examples."
+    )
+    parser.add_argument(
+        "--few-shot",
+        action="store_true",
+        help="Use few-shot prompts (with examples). This is the default."
+    )
 
     args = parser.parse_args()
 
@@ -89,15 +111,52 @@ Available judges:
             print(f"  {judge_id:12} - {config['description']} (model: {config['model']}, provider: {config['provider']})")
         exit(0)
 
+    # Set ZERO_SHOT config based on arguments
+    # If --zero-shot is specified, use zero-shot. If --few-shot is specified, use few-shot.
+    # If neither, use the config default (currently True = zero-shot)
+    if args.zero_shot and args.few_shot:
+        print("ERROR: Cannot specify both --zero-shot and --few-shot")
+        exit(1)
+
+    import config
+    if args.zero_shot:
+        config.ZERO_SHOT = True
+        print("Using ZERO-SHOT prompts (no examples)")
+    elif args.few_shot:
+        config.ZERO_SHOT = False
+        print("Using FEW-SHOT prompts (with examples)")
+    else:
+        # Use config default
+        print(f"Using {'ZERO-SHOT' if config.ZERO_SHOT else 'FEW-SHOT'} prompts (from config)")
+
     judges = args.judges if args.judges else DEFAULT_JUDGES
 
     if args.single:
         async def run_single():
-            output = await analyze_conversation(Path(args.single), judges)
+            if args.multi_agent:
+                # Multi-agent HOW assessment mode
+                from multi_agent_how import multi_agent_how_analysis
+                output = await multi_agent_how_analysis(
+                    json.load(open(args.single, 'r', encoding='utf-8')),
+                    args.multi_agent_model,
+                    AVAILABLE_JUDGES
+                )
+            else:
+                output = await analyze_conversation(Path(args.single), judges)
             print(json.dumps(output, indent=2))
         asyncio.run(run_single())
     else:
-        asyncio.run(run_pipeline(args.input, args.limit, judges))
+        if args.multi_agent:
+            # Multi-agent mode for batch processing
+            from pipeline_multi_agent import run_multi_agent_pipeline
+            asyncio.run(run_multi_agent_pipeline(
+                args.input,
+                args.limit,
+                args.multi_agent_model,
+                AVAILABLE_JUDGES
+            ))
+        else:
+            asyncio.run(run_pipeline(args.input, args.limit, judges))
 
 
 if __name__ == "__main__":

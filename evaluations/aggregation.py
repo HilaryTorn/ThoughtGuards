@@ -12,11 +12,13 @@ try:
     from .config import AXIS_WEIGHTS, PARTIAL_MATCH_THRESHOLD
     from .agreement import calculate_pattern_similarity
     from .confidence import calculate_evidence_score, calculate_confidence_alignment
+    from .scoring import calculate_severity
 except ImportError:
     sys.path.insert(0, str(Path(__file__).parent))
     from config import AXIS_WEIGHTS, PARTIAL_MATCH_THRESHOLD
     from agreement import calculate_pattern_similarity
     from confidence import calculate_evidence_score, calculate_confidence_alignment
+    from scoring import calculate_severity
 
 
 def extract_patterns_from_result(result: dict) -> List[dict]:
@@ -122,6 +124,23 @@ def aggregate_pattern_cluster(patterns: List[dict], similarities: List[float]) -
         "evidence_factor": round(evidence_factor, 3),
         "calibration_factor": round(calibration_factor, 3),
         "final_confidence": final_confidence,
+    }
+
+    # Calculate severity from triad codes
+    labels = result.get("labels", {})
+    target = labels.get("TARGET", "T1")
+    how = labels.get("HOW", "H1")
+    why = labels.get("WHY", "W1")
+
+    severity_info = calculate_severity(target, how, why)
+    result["severity"] = severity_info["severity"]  # Numeric severity (1-5)
+    result["severity_level"] = severity_info["severity_level"]  # String label
+    result["_severity_breakdown"] = {
+        "product_score": severity_info["product_score"],
+        "severity_numeric": severity_info["severity"],  # Keep numeric in breakdown for reference
+        "target_criticality": severity_info["target_criticality"],
+        "how_risk": severity_info["how_risk"],
+        "why_pressure": severity_info["why_pressure"],
     }
 
     # Collect all quotes from all patterns
