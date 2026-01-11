@@ -16,7 +16,8 @@ export interface IssueCardProps {
   id: string;
   title: string;
   description?: string;
-  severity: 'high' | 'medium' | 'low';
+  severity: 'very_high' | 'high' | 'medium' | 'low' | 'very_low';
+  severityScore?: number;
   howCode: HOWCode;
   whyCode: WHYCode;
   targetCode: TARGETCode;
@@ -41,6 +42,11 @@ export interface IssueCardProps {
 }
 
 const severityStyles = {
+  very_high: {
+    dot: 'bg-red-500',
+    badge: 'bg-red-500/15 text-red-400 border-red-500/30',
+    label: 'Very High',
+  },
   high: {
     dot: 'bg-red-500',
     badge: 'bg-red-500/15 text-red-400 border-red-500/30',
@@ -52,9 +58,14 @@ const severityStyles = {
     label: 'Medium',
   },
   low: {
-    dot: 'bg-emerald-500',
-    badge: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
+    dot: 'bg-blue-500',
+    badge: 'bg-blue-500/15 text-blue-400 border-blue-500/30',
     label: 'Low',
+  },
+  very_low: {
+    dot: 'bg-blue-500',
+    badge: 'bg-blue-500/15 text-blue-400 border-blue-500/30',
+    label: 'Very Low',
   },
 };
 
@@ -121,6 +132,7 @@ const IssueCard: React.FC<IssueCardProps> = ({
   title,
   description,
   severity,
+  severityScore,
   howCode,
   whyCode,
   targetCode,
@@ -161,7 +173,7 @@ const IssueCard: React.FC<IssueCardProps> = ({
         </div>
         <div className="flex items-center gap-2">
           <span className={`text-[11px] font-semibold px-2.5 py-1 rounded uppercase tracking-wide border ${styles.badge}`}>
-            {styles.label}
+            {styles.label}{severityScore !== undefined ? ` (${severityScore})` : ''}
           </span>
         </div>
       </button>

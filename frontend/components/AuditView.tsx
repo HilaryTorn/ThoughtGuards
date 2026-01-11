@@ -377,9 +377,24 @@ const AuditView: React.FC<AuditViewProps> = ({ onResult, settings }) => {
         result = multiRunResult;
       } else {
         // Use Python evaluation server for single-run audits
+        // Map old model names to new judge IDs
+        const modelToJudge: Record<string, string> = {
+          'gemini-2.0-flash': 'mistral',
+          'gemini-2.0-flash-exp': 'mistral',
+          'claude-sonnet-4-20250514': 'sonnet',
+          'claude-3-5-sonnet-latest': 'sonnet',
+          'claude-haiku-4-5-20251001': 'haiku',
+          'sonnet': 'sonnet',
+          'haiku': 'haiku',
+          'mistral': 'mistral',
+          'compassj': 'compassj',
+        };
+
         // Build judges from settings (defaults to open source models)
-        const primaryJudge = settings.auditorModel || 'mistral';
-        const secondaryJudge = settings.secondaryJudgeModel ?? 'compassj';
+        const rawPrimary = settings.auditorModel || 'mistral';
+        const rawSecondary = settings.secondaryJudgeModel ?? 'compassj';
+        const primaryJudge = modelToJudge[rawPrimary] || 'mistral';
+        const secondaryJudge = rawSecondary ? (modelToJudge[rawSecondary] || rawSecondary) : null;
         const judges = secondaryJudge ? [primaryJudge, secondaryJudge] : [primaryJudge];
 
         console.log('[AuditView] Calling Python evaluation server with judges:', judges);
@@ -409,9 +424,27 @@ const AuditView: React.FC<AuditViewProps> = ({ onResult, settings }) => {
           };
         };
 
-        // Convert to AuditResult format expected by the UI
+        // Extract data from FastAPI response
+        // Note: evaluate.ts already saved to DB - we just need to build UI state
         const patterns = evalResult.manipulation_evaluations?.[0]?.patterns || [];
         const meta = evalResult._meta || {};
+
+        // Calculate overall_score from PATTERNS, not agreement_rate
+        // If patterns detected, score >= 0.5 to show as "flagged"
+        let overallScore = 0;
+        if (patterns.length > 0) {
+          const avgConfidence = patterns.reduce((sum: number, p: any) => sum + (p.confidence || 0.5), 0) / patterns.length;
+          overallScore = Math.max(0.5, Math.min(1, avgConfidence));
+        }
+
+        // Confidence reflects judge agreement
+        const agreementType = meta.agreement_type || 'unknown';
+        let confidence: 'low' | 'medium' | 'high' = 'low';
+        if (agreementType === 'full' || agreementType === 'strong' || agreementType === 'both_clean') {
+          confidence = 'high';
+        } else if (agreementType === 'partial') {
+          confidence = 'medium';
+        }
 
         result = {
           id: evalResult.report_id,
@@ -419,8 +452,8 @@ const AuditView: React.FC<AuditViewProps> = ({ onResult, settings }) => {
           timestamp: new Date().toISOString(),
           skill_id: 'llm-judge',
           model_name: meta.judges_used?.join('+') || 'unknown',
-          overall_score: meta.agreement_rate || 0,
-          confidence: meta.agreement_type === 'full' || meta.agreement_type === 'strong' ? 'high' : meta.agreement_type === 'partial' ? 'medium' : 'low',
+          overall_score: overallScore,
+          confidence,
           detected_types: patterns.map((p: any) => ({
             type: p.triad_pattern_id || 'unknown',
             score: p.confidence || 0,
@@ -428,7 +461,9 @@ const AuditView: React.FC<AuditViewProps> = ({ onResult, settings }) => {
           })),
           metrics: {
             skill_count: judges.length,
-            primary_score: meta.agreement_rate || 0,
+            agreement_rate: meta.agreement_rate || 0,
+            agreement_type: agreementType,
+            patterns_count: patterns.length,
           },
           recommendations: [],
           limitations: [],
@@ -442,133 +477,8 @@ const AuditView: React.FC<AuditViewProps> = ({ onResult, settings }) => {
         return updated;
       });
 
-      // Save to database - map to audit_reports schema
-      try {
-        // Generate hashes for deduplication and tracking
-        const generateHash = (content: string): string => {
-          // Simple hash generation (in production, use crypto.subtle)
-          let hash = 0;
-          for (let i = 0; i < content.length; i++) {
-            const char = content.charCodeAt(i);
-            hash = ((hash << 5) - hash) + char;
-            hash = hash & hash; // Convert to 32-bit integer
-          }
-          return Math.abs(hash).toString(16).padStart(16, '0');
-        };
-
-        const now = new Date().toISOString();
-        const promptHash = generateHash(`${result.skill_id}-${result.model_name}-${now.substring(0, 10)}`);
-        const patterns = (result as any).patterns;
-        const responseHash = generateHash(JSON.stringify(patterns || result.detected_types || {}));
-
-        // Clean testCase to avoid circular references - only include serializable data
-        const conversationSnapshot = {
-          conversation_id: testCase.conversation_id,
-          turns: testCase.turns,
-          metadata: testCase.metadata,
-          reasoning_trace: testCase.reasoning_trace,
-          category: testCase.category,
-          display_type: testCase.display_type,
-        };
-
-        // Build audit report in new format
-        const reportId = result.id || `audit-${testCase.conversation_id}-${Date.now()}`;
-        const skillId = result.skill_id || 'taxonomy-auditor';
-
-        const auditReport = {
-          report_id: reportId,
-          conversation_id: result.conversation_id || testCase.conversation_id,
-          created_at: now,
-          created_by: null,
-          execution_duration_ms: null,
-          skill_id: skillId,
-          skill_version: '1.0.0', // Default version
-          model_name: result.model_name,
-          model_version: null,
-          llm_parameters: {
-            temperature: null,
-            top_p: null,
-            seed: null
-          },
-          prompt_hash: promptHash,
-          prompt_version: 'v1.0',
-          timestamp_utc: now,
-          system_fingerprint: null,
-          response_hash: responseHash,
-          completion_tokens: result.usage?.candidates_tokens || 0,
-          prompt_tokens: result.usage?.prompt_tokens || 0,
-          cached_tokens: 0,
-          latency_ms: null,
-          finish_reason: null,
-          cache_hit: false,
-          evaluator_model: result.model_name,
-          evaluation_seed: null,
-          evaluation_prompt_version: null,
-          position_variant: null,
-          prompt_patch_id: null,
-          cache_key: null,
-          overall_score: result.overall_score,
-          confidence: result.confidence,
-          detected_types: result.detected_types || [],
-          metrics: result.metrics || {},
-          recommendations: result.recommendations || [],
-          limitations: result.limitations || [],
-          usage: result.usage || undefined,
-          skill_results: result.skill_results || null,
-          combined_score: result.combined_score || null,
-          primary_category: result.primary_category || null,
-          secondary_categories: result.secondary_categories || null,
-          detection_metadata: result.detection_metadata || null,
-          patterns: patterns || null,
-          conversation_snapshot: conversationSnapshot,
-          tags: null,
-          notes: null,
-          error_message: null
-        };
-
-        console.log('About to POST audit report:', {
-          report_id: auditReport.report_id,
-          conversation_id: auditReport.conversation_id,
-          skill_id: auditReport.skill_id,
-          result_id: result.id,
-          result_conversation_id: result.conversation_id,
-          result_skill_id: result.skill_id,
-          testCase_conversation_id: testCase.conversation_id,
-        });
-
-        // Validate before sending - if any field is missing, skip the save
-        if (!auditReport.report_id || !auditReport.conversation_id || !auditReport.skill_id) {
-          console.error('Missing required fields in audit report - SKIPPING SAVE:', {
-            report_id: auditReport.report_id,
-            conversation_id: auditReport.conversation_id,
-            skill_id: auditReport.skill_id,
-            result_keys: Object.keys(result || {}),
-            testCase_keys: Object.keys(testCase || {}),
-          });
-          throw new Error('Missing required fields - cannot save to database');
-        }
-
-        const response = await fetch('/api/audit-reports', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(auditReport),
-        });
-
-        console.log('POST response status:', response.status);
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.error('Server error response:', errorText);
-          throw new Error(`Failed to save audit: ${response.status} ${errorText}`);
-        }
-
-        const responseData = await response.json();
-        console.log('Audit saved successfully:', responseData);
-      } catch (saveErr) {
-        console.error('Failed to save audit result to database:', saveErr);
-        console.error('Error type:', saveErr instanceof Error ? saveErr.constructor.name : typeof saveErr);
-        console.error('Error message:', saveErr instanceof Error ? saveErr.message : String(saveErr));
-        // Don't fail the audit if save fails - data is still in UI
-      }
+      // Note: evaluate.ts already saved to DB - no need to save again here
+      console.log('[AuditView] Audit complete, report_id:', result.id);
 
       if (onResult) {
         onResult(result, testCase);

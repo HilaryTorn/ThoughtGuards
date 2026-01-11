@@ -85,16 +85,20 @@ app.post('/', async (c) => {
   const reportId = `audit_${conversation_id}_${Date.now()}`;
 
   // Calculate overall score from patterns
+  // If patterns detected, score should be >= 0.5 to show as "flagged" not "clean"
   let overallScore = 0;
   if (patterns.length > 0) {
-    const totalWeight = patterns.reduce((sum: number, p: any) =>
-      sum + (p.prominence || 0.5) * (p.confidence || 0.5) * (p.severity || 3), 0);
-    overallScore = Math.min(1, totalWeight / (patterns.length * 5));
+    // Average confidence of patterns, boosted by number of patterns
+    const avgConfidence = patterns.reduce((sum: number, p: any) => sum + (p.confidence || 0.5), 0) / patterns.length;
+    // Boost for multiple patterns (more evidence)
+    const patternBoost = Math.min(1, 0.5 + patterns.length * 0.1);
+    // Base score is average confidence, minimum 0.5 if any pattern exists
+    overallScore = Math.max(0.5, Math.min(1, avgConfidence * patternBoost));
   }
 
   // Determine confidence level from agreement
   let confidenceLevel = 'low';
-  if (meta.agreement_type === 'full' || meta.agreement_type === 'strong') {
+  if (meta.agreement_type === 'full' || meta.agreement_type === 'strong' || meta.agreement_type === 'both_clean') {
     confidenceLevel = 'high';
   } else if (meta.agreement_type === 'partial') {
     confidenceLevel = 'medium';
@@ -102,6 +106,8 @@ app.post('/', async (c) => {
 
   // Primary category from first pattern
   const primaryCategory = patterns[0]?.labels?.HOW || null;
+
+  console.log(`[evaluate] Patterns found: ${patterns.length}, overallScore: ${overallScore}, agreement: ${meta.agreement_type}`);
 
   try {
     await db.prepare(`
@@ -140,6 +146,42 @@ app.post('/', async (c) => {
       primaryCategory
     ).run();
     console.log(`[evaluate] Saved audit report: ${reportId}`);
+
+    // If multiple judges were used, also save to cross_validation_runs table
+    const judgesUsed = meta.judges_used || judges || [];
+    if (judgesUsed.length >= 2) {
+      const cvId = `cv_${conversation_id}_${Date.now()}`;
+      const agreementRate = meta.agreement_rate || 0;
+      const isAgreement = meta.agreement_type === 'full' || meta.agreement_type === 'strong';
+
+      await db.prepare(`
+        INSERT INTO cross_validation_runs (
+          cv_id, audit_id, conversation_id,
+          primary_judge, secondary_judge,
+          primary_score, secondary_score, score_difference,
+          agreement, agreement_threshold, cohens_kappa,
+          self_preference_detected, bias_magnitude,
+          full_result, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).bind(
+        cvId,
+        reportId,
+        conversation_id,
+        judgesUsed[0] || 'unknown',
+        judgesUsed[1] || 'unknown',
+        agreementRate,
+        agreementRate,
+        0,
+        isAgreement ? 1 : 0,
+        0.5,
+        null,
+        0,
+        null,
+        JSON.stringify(result),  // Store full result for later retrieval
+        timestamp
+      ).run();
+      console.log(`[evaluate] Saved cross-validation run: ${cvId}`);
+    }
   } catch (dbError: any) {
     console.error('Failed to save audit report:', dbError);
     // Still return the result even if DB save fails

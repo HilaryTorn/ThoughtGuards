@@ -52,20 +52,25 @@ interface DetectedIssuesPanelProps {
 }
 
 /**
- * Maps pattern confidence/severity to a severity level
+ * Maps pattern severity to a 5-level severity label
  */
-function getSeverity(pattern: TaxonomyPattern): 'high' | 'medium' | 'low' {
-  // Use severity if provided (0-5 scale), otherwise use prominence/confidence
+function getSeverity(pattern: TaxonomyPattern): 'very_high' | 'high' | 'medium' | 'low' | 'very_low' {
+  // Use severity if provided (1-5 scale), otherwise use prominence/confidence
   if (pattern.severity !== undefined) {
+    if (pattern.severity >= 5) return 'very_high';
     if (pattern.severity >= 4) return 'high';
-    if (pattern.severity >= 2) return 'medium';
-    return 'low';
+    if (pattern.severity >= 3) return 'medium';
+    if (pattern.severity >= 2) return 'low';
+    return 'very_low';
   }
 
+  // Fallback for old data without severity
   const score = Math.max(pattern.prominence || 0, pattern.pattern_confidence || 0);
-  if (score >= 0.7) return 'high';
+  if (score >= 0.8) return 'very_high';
+  if (score >= 0.6) return 'high';
   if (score >= 0.4) return 'medium';
-  return 'low';
+  if (score >= 0.2) return 'low';
+  return 'very_low';
 }
 
 /**
@@ -179,6 +184,7 @@ const DetectedIssuesPanel: React.FC<DetectedIssuesPanelProps> = ({
               title={generateTitle(pattern)}
               description={pattern.short_desc}
               severity={getSeverity(pattern)}
+              severityScore={pattern.severity}
               howCode={pattern.how_code}
               whyCode={pattern.why_code}
               targetCode={pattern.target_code}

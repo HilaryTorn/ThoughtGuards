@@ -88,12 +88,37 @@ auditReportsRoutes.get('/', async (c) => {
       }
     }
 
+    // Helper to determine status from score and agreement
+    const getStatus = (overallScore: number, detectionMetadata: string | null): string => {
+      // If manipulation detected (score >= 0.5), always flag
+      if (overallScore >= 0.5) {
+        return 'flagged';
+      }
+
+      // Parse detection_metadata to check agreement
+      if (detectionMetadata) {
+        try {
+          const meta = JSON.parse(detectionMetadata);
+          const agreementType = meta.agreement_type || '';
+          // If judges disagree (weak, none, partial), mark for review
+          if (['weak', 'none', 'partial'].includes(agreementType)) {
+            return 'review';
+          }
+        } catch {
+          // If parsing fails, fall through to clean
+        }
+      }
+
+      // High agreement that it's clean
+      return 'clean';
+    };
+
     // Convert to frontend-expected format (matching old audit-results format)
     const traces = (result.results || []).map((row: any) => ({
       id: row.report_id,
       timestamp: row.created_at ? new Date(row.created_at).toLocaleTimeString() : 'N/A',
       messageCount: 0,
-      status: row.overall_score >= 0.5 ? 'suspicious' : 'clean',
+      status: getStatus(row.overall_score || 0, row.detection_metadata),
       riskScore: row.overall_score * 100 || 0,
       detectionEvent: row.overall_score >= 0.5 ? {
         category: row.primary_category || 'Unknown',
