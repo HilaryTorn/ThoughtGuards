@@ -63,7 +63,7 @@ app.post('/', async (c) => {
         conversation,
         judges: judges || null,
         zero_shot: false,  // Hardcoded: use few-shot prompts
-        multi_agent: true,  // Hardcoded: use multi-agent HOW mode
+        multi_agent: false,  // Use multi-judge mode for cross-validation
         multi_agent_model: effectiveModel
       })
     });

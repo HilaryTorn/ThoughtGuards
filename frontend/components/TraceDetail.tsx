@@ -213,8 +213,8 @@ const TraceDetail: React.FC<TraceDetailProps> = ({ trace, onBack, onAction }) =>
           <div>
             <h2 className="text-lg font-bold text-slate-100 flex items-center gap-3">
               Trace {shortTraceId}
-              {/* Agreement Badge (if cross-validation data available) */}
-              {crossValidationMeta && (
+              {/* Agreement Badge (only if multiple judges used) */}
+              {crossValidationMeta && (crossValidationMeta.judges_used?.length ?? 0) >= 2 && (
                 <span
                   className={`px-2 py-0.5 text-xs font-medium rounded ${
                     crossValidationMeta.agreement_rate > 0.85
@@ -231,7 +231,8 @@ const TraceDetail: React.FC<TraceDetailProps> = ({ trace, onBack, onAction }) =>
               )}
             </h2>
             <p className="text-xs text-slate-500 font-mono">{trace.timestamp} • Severity: {
-              trace.maxSeverity ?? trace.patterns?.reduce((max: number, p: any) => Math.max(max, p.severity ?? 0), 0) ?? 0
+              trace.maxSeverity ?? trace.patterns?.reduce((max: number, p: any) => Math.max(max, p.severity ?? 0), 0) ??
+              Math.ceil((trace.detected_types?.reduce((max: number, d: any) => Math.max(max, d.score ?? 0), 0) ?? 0) * 5)
             }/5</p>
           </div>
         </div>
@@ -421,8 +422,9 @@ const TraceDetail: React.FC<TraceDetailProps> = ({ trace, onBack, onAction }) =>
                  <div className="p-5">
                    {/* Header Row */}
                    {(() => {
-                     // Calculate max severity from patterns
-                     const maxSeverity = trace.patterns?.reduce((max: number, p: any) => Math.max(max, p.severity ?? 0), 0) ?? 0;
+                     // Calculate max severity from patterns or detected_types
+                     const maxSeverity = trace.patterns?.reduce((max: number, p: any) => Math.max(max, p.severity ?? 0), 0) ??
+                       Math.ceil((trace.detected_types?.reduce((max: number, d: any) => Math.max(max, d.score ?? 0), 0) ?? 0) * 5);
 
                      // Severity color mapping
                      const getSeverityStyle = (sev: number) => {

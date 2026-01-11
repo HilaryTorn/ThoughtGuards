@@ -611,11 +611,12 @@ const AuditView: React.FC<AuditViewProps> = ({ onResult, settings }) => {
     };
   }, [testCasesWithStatus]);
 
-  // Calculate max severity from patterns (1-5 scale)
+  // Calculate max severity from detected_types (score is 0-1, convert to 1-5 scale)
   const getMaxSeverity = (result: AuditResult): number => {
-    const patterns = (result as any).patterns;
-    if (!patterns || !Array.isArray(patterns)) return 0;
-    return patterns.reduce((max: number, p: any) => Math.max(max, p.severity ?? 0), 0);
+    const detected = result.detected_types;
+    if (!detected || !Array.isArray(detected) || detected.length === 0) return 0;
+    const maxScore = detected.reduce((max, d) => Math.max(max, d.score ?? 0), 0);
+    return Math.ceil(maxScore * 5);
   };
 
   // Severity style mapping (matches TraceDetail)

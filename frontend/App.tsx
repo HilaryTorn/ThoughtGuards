@@ -554,9 +554,9 @@ const App: React.FC = () => {
         });
 
         // Show toast notification
-        setToast({ 
-          message: `Audit completed: ${riskScore}% risk score`, 
-          type: status === 'flagged' ? 'alert' : status === 'review' ? 'info' : 'success' 
+        setToast({
+          message: 'Audit complete',
+          type: status === 'flagged' ? 'alert' : status === 'review' ? 'info' : 'success'
         });
       }} />
         </>
