@@ -379,7 +379,7 @@ const TraceDetail: React.FC<TraceDetailProps> = ({ trace, onBack, onAction }) =>
 
         {/* RIGHT: Analysis Panel (Only if flagged and has event) */}
         {isFlagged && event && catStyle && (
-          <div className="col-span-7 flex flex-col gap-4 overflow-y-auto pr-2 pb-6">
+          <div className="col-span-7 flex flex-col gap-4 overflow-y-auto pb-6">
 
              {/* Inter-Judge Agreement Panel (if cross-validation data available) */}
              {crossValidationMeta && trace.conversationId && (

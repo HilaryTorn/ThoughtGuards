@@ -587,7 +587,7 @@ const App: React.FC = () => {
   };
 
   const getPageTitle = () => {
-    if (currentView === 'dashboard') return 'Live Monitoring Dashboard';
+    if (currentView === 'dashboard') return 'Dashboard';
     if (currentView === 'traces') return selectedTrace ? `Investigation: ${selectedTrace.id}` : 'Trace History';
     if (currentView === 'audit') return 'Detection Queue';
     if (currentView === 'red-team-lab') return 'Red Team Lab';
@@ -630,16 +630,7 @@ const App: React.FC = () => {
               <h1 className="text-lg font-bold text-slate-200">
                 {getPageTitle()}
               </h1>
-              {currentView === 'dashboard' && (
-                <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-red-500/10 border border-red-500/20">
-                  <span className="relative flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
-                  </span>
-                  <span className="text-[10px] font-bold text-red-400 tracking-wider uppercase">Live</span>
-                </div>
-              )}
-            </div>
+              </div>
 
             <div className="flex items-center gap-6">
                {/* Simplified Header - Removed Session Risk */}
