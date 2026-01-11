@@ -11,12 +11,12 @@ from typing import Optional, Dict
 
 # Handle both direct execution and module import
 try:
-    from .config import OUTPUT_DIR
+    from .config import OUTPUT_DIR, ZERO_SHOT
     from .multi_agent_how import multi_agent_how_analysis
     from .summary import build_summary, print_summary
 except ImportError:
     sys.path.insert(0, str(Path(__file__).parent))
-    from config import OUTPUT_DIR
+    from config import OUTPUT_DIR, ZERO_SHOT
     from multi_agent_how import multi_agent_how_analysis
     from summary import build_summary, print_summary
 
@@ -87,8 +87,10 @@ async def run_multi_agent_pipeline(
             else:
                 print(f"  No manipulation detected | Agreement: {agreement}")
 
-            # Save individual result
-            result_file = OUTPUT_DIR / f"{filepath.stem}_multi_agent_judgment.json"
+            # Save individual result with descriptive filename
+            # Format: {conversation_id}_{judge}_multi_agent_{zero/few}_shot_judgment.json
+            shot_type = "zero_shot" if ZERO_SHOT else "few_shot"
+            result_file = OUTPUT_DIR / f"{filepath.stem}_{judge_id}_multi_agent_{shot_type}_judgment.json"
             with open(result_file, 'w', encoding='utf-8') as f:
                 json.dump(output, f, indent=2)
 

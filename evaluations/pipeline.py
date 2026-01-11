@@ -11,13 +11,13 @@ from typing import Optional, List
 
 # Handle both direct execution and module import
 try:
-    from .config import DEFAULT_JUDGES, OUTPUT_DIR
+    from .config import DEFAULT_JUDGES, OUTPUT_DIR, ZERO_SHOT
     from .judges import run_judge
     from .aggregation import aggregate_n_evaluations
     from .summary import build_summary, print_summary
 except ImportError:
     sys.path.insert(0, str(Path(__file__).parent))
-    from config import DEFAULT_JUDGES, OUTPUT_DIR
+    from config import DEFAULT_JUDGES, OUTPUT_DIR, ZERO_SHOT
     from judges import run_judge
     from aggregation import aggregate_n_evaluations
     from summary import build_summary, print_summary
@@ -90,8 +90,11 @@ async def run_pipeline(
             else:
                 print(f"  No manipulation detected | Agreement: {agreement}")
 
-            # Save individual result
-            result_file = OUTPUT_DIR / f"{filepath.stem}_judgment.json"
+            # Save individual result with descriptive filename
+            # Format: {conversation_id}_{judges}_single_agent_{zero/few}_shot_judgment.json
+            judges_str = "_".join(judges)
+            shot_type = "zero_shot" if ZERO_SHOT else "few_shot"
+            result_file = OUTPUT_DIR / f"{filepath.stem}_{judges_str}_single_agent_{shot_type}_judgment.json"
             with open(result_file, 'w', encoding='utf-8') as f:
                 json.dump(output, f, indent=2)
 
