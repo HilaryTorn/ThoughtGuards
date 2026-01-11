@@ -79,6 +79,9 @@ PARTIAL_MATCH_THRESHOLD = 0.5
 # Temperature for judge LLM calls (0 = deterministic, 1 = creative)
 JUDGE_TEMPERATURE = 0
 
+# Whether to use zero-shot prompts (True = zero-shot, False = few-shot with examples)
+ZERO_SHOT = True
+
 # ============================================================================
 # OUTPUT CONFIGURATION
 # ============================================================================

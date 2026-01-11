@@ -21,8 +21,9 @@ try:
         GOOGLE_API_KEY,
         AVAILABLE_JUDGES,
         JUDGE_TEMPERATURE,
+        ZERO_SHOT,
     )
-    from .prompts import JUDGE_SYSTEM_PROMPT, build_analysis_prompt
+    from .prompts import get_judge_system_prompt, build_analysis_prompt
     from .formatters import format_conversation_for_judge
 except ImportError:
     sys.path.insert(0, str(Path(__file__).parent))
@@ -33,8 +34,9 @@ except ImportError:
         GOOGLE_API_KEY,
         AVAILABLE_JUDGES,
         JUDGE_TEMPERATURE,
+        ZERO_SHOT,
     )
-    from prompts import JUDGE_SYSTEM_PROMPT, build_analysis_prompt
+    from prompts import get_judge_system_prompt, build_analysis_prompt
     from formatters import format_conversation_for_judge
 
 # Initialize clients
@@ -49,7 +51,7 @@ else:
     google_client = None
 
 
-async def judge_with_anthropic(conversation: Dict[str, Any], model: str, judge_id: str) -> Dict[str, Any]:
+async def judge_with_anthropic(conversation: Dict[str, Any], model: str, judge_id: str, custom_system_prompt: str = None, custom_user_prompt: str = None) -> Dict[str, Any]:
     """
     Run judgment using Anthropic API.
 
@@ -57,6 +59,8 @@ async def judge_with_anthropic(conversation: Dict[str, Any], model: str, judge_i
         conversation: Conversation dict
         model: Model name
         judge_id: Judge identifier
+        custom_system_prompt: Optional custom system prompt (for multi-agent specialization)
+        custom_user_prompt: Optional custom user prompt (for multi-agent specialization)
 
     Returns:
         Judgment result dict
@@ -67,14 +71,22 @@ async def judge_with_anthropic(conversation: Dict[str, Any], model: str, judge_i
     if not anthropic_client:
         return _make_error_result(conversation_id, model, judge_id, "Anthropic API key not configured")
 
+    # Use custom prompts if provided, otherwise use defaults based on ZERO_SHOT setting
+    if custom_system_prompt:
+        system_prompt = custom_system_prompt
+    else:
+        system_prompt = get_judge_system_prompt(use_examples=not ZERO_SHOT)
+
+    user_prompt = custom_user_prompt if custom_user_prompt else build_analysis_prompt(formatted)
+
     try:
         response = anthropic_client.messages.create(
             model=model,
             max_tokens=4096,
             temperature=JUDGE_TEMPERATURE,
-            system=JUDGE_SYSTEM_PROMPT,
+            system=system_prompt,
             messages=[
-                {"role": "user", "content": build_analysis_prompt(formatted)}
+                {"role": "user", "content": user_prompt}
             ]
         )
 
@@ -94,7 +106,7 @@ async def judge_with_anthropic(conversation: Dict[str, Any], model: str, judge_i
         return _make_error_result(conversation_id, model, judge_id, str(e))
 
 
-async def judge_with_litellm(conversation: Dict[str, Any], model: str, judge_id: str) -> Dict[str, Any]:
+async def judge_with_litellm(conversation: Dict[str, Any], model: str, judge_id: str, custom_system_prompt: str = None, custom_user_prompt: str = None) -> Dict[str, Any]:
     """
     Run judgment using LiteLLM/OpenAI-compatible API.
 
@@ -102,6 +114,8 @@ async def judge_with_litellm(conversation: Dict[str, Any], model: str, judge_id:
         conversation: Conversation dict
         model: Model name
         judge_id: Judge identifier
+        custom_system_prompt: Optional custom system prompt (for multi-agent specialization)
+        custom_user_prompt: Optional custom user prompt (for multi-agent specialization)
 
     Returns:
         Judgment result dict
@@ -112,13 +126,21 @@ async def judge_with_litellm(conversation: Dict[str, Any], model: str, judge_id:
     if not litellm_client:
         return _make_error_result(conversation_id, model, judge_id, "LiteLLM API key not configured")
 
+    # Use custom prompts if provided, otherwise use defaults based on ZERO_SHOT setting
+    if custom_system_prompt:
+        system_prompt = custom_system_prompt
+    else:
+        system_prompt = get_judge_system_prompt(use_examples=not ZERO_SHOT)
+
+    user_prompt = custom_user_prompt if custom_user_prompt else build_analysis_prompt(formatted)
+
     try:
         response = litellm_client.chat.completions.create(
             model=model,
             max_tokens=4096,
             messages=[
-                {"role": "system", "content": JUDGE_SYSTEM_PROMPT},
-                {"role": "user", "content": build_analysis_prompt(formatted)}
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
             ],
             temperature=JUDGE_TEMPERATURE,
         )
@@ -141,7 +163,7 @@ async def judge_with_litellm(conversation: Dict[str, Any], model: str, judge_id:
         return _make_error_result(conversation_id, model, judge_id, str(e))
 
 
-async def judge_with_google(conversation: Dict[str, Any], model: str, judge_id: str) -> Dict[str, Any]:
+async def judge_with_google(conversation: Dict[str, Any], model: str, judge_id: str, custom_system_prompt: str = None, custom_user_prompt: str = None) -> Dict[str, Any]:
     """
     Run judgment using Google Gemini API.
 
@@ -149,6 +171,8 @@ async def judge_with_google(conversation: Dict[str, Any], model: str, judge_id: 
         conversation: Conversation dict
         model: Model name
         judge_id: Judge identifier
+        custom_system_prompt: Optional custom system prompt (for multi-agent specialization)
+        custom_user_prompt: Optional custom user prompt (for multi-agent specialization)
 
     Returns:
         Judgment result dict
@@ -159,6 +183,14 @@ async def judge_with_google(conversation: Dict[str, Any], model: str, judge_id: 
     if not google_client:
         return _make_error_result(conversation_id, model, judge_id, "Google API key not configured")
 
+    # Use custom prompts if provided, otherwise use defaults based on ZERO_SHOT setting
+    if custom_system_prompt:
+        system_prompt = custom_system_prompt
+    else:
+        system_prompt = get_judge_system_prompt(use_examples=not ZERO_SHOT)
+
+    user_prompt = custom_user_prompt if custom_user_prompt else build_analysis_prompt(formatted)
+
     try:
         # Create the model instance
         gemini_model = google_client.GenerativeModel(
@@ -168,13 +200,11 @@ async def judge_with_google(conversation: Dict[str, Any], model: str, judge_id: 
                 "max_output_tokens": 4096,
                 "response_mime_type": "application/json",
             },
-            system_instruction=JUDGE_SYSTEM_PROMPT,
+            system_instruction=system_prompt,
         )
 
         # Generate response
-        response = gemini_model.generate_content(
-            build_analysis_prompt(formatted)
-        )
+        response = gemini_model.generate_content(user_prompt)
 
         response_text = response.text
         result_data = _parse_json_response(response_text, conversation_id)
