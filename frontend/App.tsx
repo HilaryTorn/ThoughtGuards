@@ -159,8 +159,8 @@ const App: React.FC = () => {
 
         // Migrate to new cross-validation defaults if not set
         if (parsed.secondaryJudgeModel === undefined && parsed.enableCrossValidation === undefined) {
-          console.log('Setting default cross-validation: Judge B = claude-sonnet-4-20250514');
-          parsed.secondaryJudgeModel = 'claude-sonnet-4-20250514';
+          console.log('Setting default cross-validation: Judge B = compassj');
+          parsed.secondaryJudgeModel = 'compassj';
           parsed.enableCrossValidation = true;
           needsSave = true;
         }
@@ -186,7 +186,7 @@ const App: React.FC = () => {
       sensitivity: 'medium',
       riskThreshold: 70,
       activeSkills: initialActiveSkills,
-      auditorModel: 'gemini-2.0-flash',
+      auditorModel: 'mistral', // Mistral Nemo as Judge A
       thinkingBudget: undefined,
       includeValidatorCoT: true,
       chatbotMode: 'helpful',
@@ -196,7 +196,7 @@ const App: React.FC = () => {
       multiRunSeed: undefined, // Optional seed for reproducibility
       // Cross-validation settings
       enableCrossValidation: true,
-      secondaryJudgeModel: 'claude-sonnet-4-20250514', // Claude Sonnet 4 as Judge B
+      secondaryJudgeModel: 'compassj', // CompassJ as Judge B
     };
   });
 
