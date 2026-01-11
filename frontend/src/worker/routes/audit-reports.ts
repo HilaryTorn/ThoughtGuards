@@ -111,7 +111,13 @@ auditReportsRoutes.get('/', async (c) => {
                 }
               }
 
+              // Spread fullResult first, then override _meta with our constructed version
+              // This ensures our UI-expected _meta structure takes precedence
+              const { _meta: _originalMeta, ...restOfFullResult } = fullResult || {};
               cvMap[convId] = {
+                ...restOfFullResult,
+                // Store enriched patterns with cross-validation metadata
+                _enriched_patterns: patterns,
                 _meta: {
                   judge_1_model: judge1Id,
                   judge_2_model: judge2Id,
@@ -127,7 +133,6 @@ auditReportsRoutes.get('/', async (c) => {
                   judges_used: judgesUsed,
                   total_tokens: pythonMeta.total_tokens || 0,
                 },
-                ...fullResult
               };
             } catch (e) {
               console.warn('Failed to parse cross-validation result:', e);
@@ -233,7 +238,11 @@ auditReportsRoutes.get('/', async (c) => {
       primaryCategory: row.primary_category || undefined,
       secondaryCategories: row.secondary_categories ? JSON.parse(row.secondary_categories) : undefined,
       detectionMetadata: row.detection_metadata ? JSON.parse(row.detection_metadata) : undefined,
-      patterns: row.patterns ? JSON.parse(row.patterns).map(transformPattern) : undefined,
+      // Prefer enriched patterns from cross-validation (has _confidence_breakdown, etc.)
+      // Fall back to patterns from audit_reports table
+      patterns: cvMap[row.conversation_id]?._enriched_patterns?.length > 0
+        ? cvMap[row.conversation_id]._enriched_patterns
+        : (row.patterns ? JSON.parse(row.patterns).map(transformPattern) : undefined),
       createdAt: row.created_at || new Date().toISOString(),
       updatedAt: row.created_at || new Date().toISOString(),
       crossValidation: cvMap[row.conversation_id] || undefined,

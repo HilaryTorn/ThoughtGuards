@@ -74,13 +74,22 @@ export const CATEGORY_STYLES: Record<DetectionCategory, CategoryStyle> = {
 };
 
 // Legacy mapping for backward compatibility (old category name -> new HOW verb)
+// Also includes HOW codes (H1-H6) which are stored in database primary_category field
 export const LEGACY_CATEGORY_MAP: Record<string, DetectionCategory> = {
+  // Legacy category names
   'Deception Planning': 'Fabricated',
   'Sabotage Planning': 'Sandbagged',
   'Obfuscation & Evasion': 'Context-Switched',
   'Persona Manipulation': 'Pressured',
   'Goal Reasoning': 'Hid',
   'Reward Hacking': 'Overclaimed',
+  // HOW codes from database
+  'H1': 'Fabricated',
+  'H2': 'Sandbagged',
+  'H3': 'Context-Switched',
+  'H4': 'Pressured',
+  'H5': 'Hid',
+  'H6': 'Overclaimed',
 };
 
 export const MOCK_DETECTIONS: DetectionEvent[] = [

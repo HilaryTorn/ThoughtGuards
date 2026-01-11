@@ -97,8 +97,40 @@ const TraceDetail: React.FC<TraceDetailProps> = ({ trace, onBack, onAction }) =>
   if (!trace) return null;
 
   const event = trace.detectionEvent;
+
+  // Build patterns to show - use trace.patterns if available, otherwise fall back to detectedTypes
+  // (Dashboard uses detectedTypes successfully, so we should too if patterns is incomplete)
+  const patternsToShow = React.useMemo(() => {
+    const detectedTypesCount = (trace as any).detectedTypes?.length || 0;
+    // If patterns exist and have at least as many as detectedTypes, use them
+    if (trace.patterns && trace.patterns.length >= detectedTypesCount) {
+      return trace.patterns;
+    }
+    // Otherwise, build minimal patterns from detectedTypes (which Dashboard uses)
+    const detectedTypes = (trace as any).detectedTypes as Array<{
+      type: string;
+      score: number;
+      severity?: number;
+      labels?: { HOW?: string; WHY?: string; TARGET?: string };
+    }> | undefined;
+    if (!detectedTypes || detectedTypes.length === 0) {
+      return trace.patterns || [];
+    }
+    return detectedTypes.map((d) => ({
+      triad: d.type,
+      how_code: (d.labels?.HOW || d.type.split('|')[1] || 'H1') as HOWCode,
+      why_code: (d.labels?.WHY || d.type.split('|')[2] || 'W1') as WHYCode,
+      target_code: (d.labels?.TARGET || d.type.split('|')[0] || 'T1') as TARGETCode,
+      severity: d.severity ?? Math.ceil(d.score * 5),
+      pattern_confidence: d.score,
+      short_desc: `${d.labels?.HOW || 'Detection'} pattern`,
+      sentence: '',
+      prominence: d.score,
+    }));
+  }, [trace.patterns, (trace as any).detectedTypes]);
+
   // Show analysis panel for flagged, review, confirmed, reviewed, false_positive statuses OR when patterns exist
-  const hasPatterns = (trace.patterns?.length ?? 0) > 0;
+  const hasPatterns = patternsToShow.length > 0;
   const isFlagged = trace.status === 'flagged' || trace.status === 'confirmed' || trace.status === 'reviewed' || trace.status === 'false_positive' || trace.status === 'review' || hasPatterns;
   // Normalize legacy category names to new HOW verbs
   const normalizedCategory = event ? normalizeCategory(event.category) : null;
@@ -230,10 +262,7 @@ const TraceDetail: React.FC<TraceDetailProps> = ({ trace, onBack, onAction }) =>
                 </span>
               )}
             </h2>
-            <p className="text-xs text-slate-500 font-mono">{trace.timestamp} • Severity: {
-              trace.maxSeverity ?? trace.patterns?.reduce((max: number, p: any) => Math.max(max, p.severity ?? 0), 0) ??
-              Math.ceil((trace.detected_types?.reduce((max: number, d: any) => Math.max(max, d.score ?? 0), 0) ?? 0) * 5)
-            }/5</p>
+            <p className="text-xs text-slate-500 font-mono">{trace.timestamp} • Severity: {trace.maxSeverity ?? 0}/5</p>
           </div>
         </div>
 
@@ -402,11 +431,12 @@ const TraceDetail: React.FC<TraceDetailProps> = ({ trace, onBack, onAction }) =>
              )}
 
              {/* Detected Issues Panel */}
-             {trace.patterns && trace.patterns.length > 0 ? (
+             {patternsToShow.length > 0 ? (
                <DetectedIssuesPanel
-                 patterns={trace.patterns}
+                 patterns={patternsToShow}
                  judge1Name={crossValidationMeta?.judge_1_model}
                  judge2Name={crossValidationMeta?.judge_2_model}
+                 modelName={trace.modelName}
                />
              ) : (
                /* Fallback: Generate mockup-style issue card from detection event */

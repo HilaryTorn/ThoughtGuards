@@ -49,6 +49,8 @@ interface DetectedIssuesPanelProps {
   // Judge names for cross-validation display (optional)
   judge1Name?: string;
   judge2Name?: string;
+  // Model name for single-judge display
+  modelName?: string;
 }
 
 /**
@@ -127,6 +129,7 @@ const DetectedIssuesPanel: React.FC<DetectedIssuesPanelProps> = ({
   className = '',
   judge1Name,
   judge2Name,
+  modelName,
 }) => {
   const [isPanelExpanded, setIsPanelExpanded] = useState(true);
 
@@ -164,7 +167,14 @@ const DetectedIssuesPanel: React.FC<DetectedIssuesPanelProps> = ({
           <ChevronRight size={14} className="text-slate-400" />
         )}
         <AlertCircle size={16} className="text-amber-500" />
-        <h3 className="text-sm font-semibold text-amber-500">Detected Issues ({patterns.length})</h3>
+        <h3 className="text-sm font-semibold text-amber-500">
+          Detected Issues ({patterns.length})
+          {modelName && !judge1Name && (
+            <span className="ml-2 text-xs text-slate-500 font-normal">
+              via {modelName}
+            </span>
+          )}
+        </h3>
 
         {!isPanelExpanded && (
           <div className="ml-2 text-xs text-slate-400 font-mono truncate flex-1 text-left">
