@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, ArrowRight, Scale, CheckCircle, XCircle, AlertTriangle, ChevronDown, ChevronUp, MessageSquare, Eye } from 'lucide-react';
+import { ArrowLeft, Scale, CheckCircle, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { CrossValidationResult, CrossValidationMeta, AggregatedPattern, HOWCode, WHYCode, TARGETCode, JudgeResult } from '../types';
+import { CrossValidationResult, CrossValidationMeta, AggregatedPattern, HOWCode, WHYCode, TARGETCode } from '../types';
 import { HOW_VERBS, WHY_VERBS, TARGET_VERBS } from '../constants';
 
 /**
@@ -70,10 +70,7 @@ const PatternCard: React.FC<{
   judge2Patterns?: any[];
   expanded: boolean;
   onToggle: () => void;
-  conversationTurns?: any[];
-  judge1FlaggedIndices?: Set<number>;
-  judge2FlaggedIndices?: Set<number>;
-}> = ({ pattern, judge1Model, judge2Model, judge1Patterns, judge2Patterns, expanded, onToggle, conversationTurns, judge1FlaggedIndices, judge2FlaggedIndices }) => {
+}> = ({ pattern, judge1Model, judge2Model, judge1Patterns, judge2Patterns, expanded, onToggle }) => {
   // Find matching patterns from each judge for this pattern
   const findMatchingPattern = (patterns: any[] | undefined, triadId: string) => {
     if (!patterns) return null;
@@ -282,53 +279,6 @@ const PatternCard: React.FC<{
               </div>
             )}
 
-            {/* Relevant Conversation Turns - Side by Side */}
-            {conversationTurns && conversationTurns.length > 0 && (judge1FlaggedIndices?.size || judge2FlaggedIndices?.size) && (
-              <div className="mt-3 pt-3 border-t border-slate-700/50">
-                <h4 className="text-xs font-medium text-slate-400 mb-2 flex items-center gap-1.5">
-                  <MessageSquare size={12} />
-                  Flagged Conversation Turns
-                </h4>
-                <div className="grid grid-cols-2 gap-3">
-                  {/* Judge 1 Flagged */}
-                  <div>
-                    <p className="text-[10px] text-orange-400 mb-1">{getShortModelName(judge1Model)}</p>
-                    <div className="space-y-1 max-h-32 overflow-y-auto">
-                      {conversationTurns.map((turn: any, idx: number) => {
-                        if (!judge1FlaggedIndices?.has(idx)) return null;
-                        return (
-                          <div key={idx} className="text-[10px] p-1.5 rounded bg-orange-500/10 border-l border-orange-500">
-                            <span className="text-orange-300 font-medium">{turn.role === 'assistant' ? 'Bot' : 'User'} #{idx}:</span>
-                            <span className="text-slate-300 ml-1">{turn.content?.substring(0, 60)}{turn.content?.length > 60 ? '...' : ''}</span>
-                          </div>
-                        );
-                      })}
-                      {!Array.from(judge1FlaggedIndices || []).some(i => i < conversationTurns.length) && (
-                        <p className="text-[10px] text-slate-500 italic">None flagged</p>
-                      )}
-                    </div>
-                  </div>
-                  {/* Judge 2 Flagged */}
-                  <div>
-                    <p className="text-[10px] text-purple-400 mb-1">{getShortModelName(judge2Model)}</p>
-                    <div className="space-y-1 max-h-32 overflow-y-auto">
-                      {conversationTurns.map((turn: any, idx: number) => {
-                        if (!judge2FlaggedIndices?.has(idx)) return null;
-                        return (
-                          <div key={idx} className="text-[10px] p-1.5 rounded bg-purple-500/10 border-l border-purple-500">
-                            <span className="text-purple-300 font-medium">{turn.role === 'assistant' ? 'Bot' : 'User'} #{idx}:</span>
-                            <span className="text-slate-300 ml-1">{turn.content?.substring(0, 60)}{turn.content?.length > 60 ? '...' : ''}</span>
-                          </div>
-                        );
-                      })}
-                      {!Array.from(judge2FlaggedIndices || []).some(i => i < conversationTurns.length) && (
-                        <p className="text-[10px] text-slate-500 italic">None flagged</p>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
         </div>
       )}
@@ -398,181 +348,6 @@ const AgreementStatsPanel: React.FC<{ meta: CrossValidationMeta }> = ({ meta }) 
 };
 
 /**
- * Conversation Preview with Judge Highlights
- */
-const ConversationPreview: React.FC<{
-  conversationId: string;
-  judge1Result?: JudgeResult;
-  judge2Result?: JudgeResult;
-  judge1Model: string;
-  judge2Model: string;
-  onViewFull: () => void;
-}> = ({ conversationId, judge1Result, judge2Result, judge1Model, judge2Model, onViewFull }) => {
-  const [conversation, setConversation] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [expanded, setExpanded] = useState(false);
-
-  useEffect(() => {
-    const fetchConversation = async () => {
-      try {
-        const response = await fetch(`/api/conversations/${conversationId}`);
-        if (response.ok) {
-          const data = await response.json();
-          setConversation(data);
-        }
-      } catch (error) {
-        console.error('Failed to fetch conversation:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchConversation();
-  }, [conversationId]);
-
-  // Get flagged message indices from each judge
-  const getJudgeFlaggedIndices = (judgeResult?: JudgeResult): Set<number> => {
-    const indices = new Set<number>();
-    if (!judgeResult?.patterns) return indices;
-    for (const pattern of judgeResult.patterns) {
-      if (pattern.quotes) {
-        for (const quote of pattern.quotes) {
-          if (typeof quote.message_index === 'number') {
-            indices.add(quote.message_index);
-          }
-        }
-      }
-    }
-    return indices;
-  };
-
-  const judge1Flagged = getJudgeFlaggedIndices(judge1Result);
-  const judge2Flagged = getJudgeFlaggedIndices(judge2Result);
-
-  if (loading) {
-    return (
-      <div className="bg-slate-900/50 border border-slate-800 rounded-lg p-4 animate-pulse">
-        <div className="h-4 bg-slate-700 rounded w-1/4 mb-3"></div>
-        <div className="h-20 bg-slate-700 rounded"></div>
-      </div>
-    );
-  }
-
-  if (!conversation?.turns) {
-    return null;
-  }
-
-  const turns = conversation.turns.slice(0, expanded ? undefined : 6);
-
-  return (
-    <div className="bg-slate-900/50 border border-slate-800 rounded-lg overflow-hidden">
-      {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-slate-800">
-        <h3 className="text-sm font-medium text-slate-300 flex items-center gap-2">
-          <MessageSquare size={14} className="text-cyan-500" />
-          Conversation Preview
-        </h3>
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-3 text-xs mr-4">
-            <span className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-orange-500" />
-              <span className="text-slate-400">{getShortModelName(judge1Model)}</span>
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-purple-500" />
-              <span className="text-slate-400">{getShortModelName(judge2Model)}</span>
-            </span>
-          </div>
-          <button
-            onClick={onViewFull}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 border border-slate-700 rounded text-cyan-400 text-xs hover:bg-slate-700"
-          >
-            <Eye size={12} />
-            View Full Trace
-          </button>
-        </div>
-      </div>
-
-      {/* Side-by-side Judge Flagged Turns */}
-      <div className="p-4">
-        <div className="grid grid-cols-2 gap-4">
-          {/* Judge 1 Flagged Turns */}
-          <div>
-            <h4 className="text-xs font-medium text-orange-400 mb-2 flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-orange-500" />
-              {getShortModelName(judge1Model)} Flagged ({judge1Flagged.size})
-            </h4>
-            <div className="space-y-2 max-h-64 overflow-y-auto pr-2">
-              {turns.filter((_: any, i: number) => judge1Flagged.has(i)).length === 0 ? (
-                <p className="text-xs text-slate-500 italic">No turns flagged</p>
-              ) : (
-                turns.map((turn: any, idx: number) => {
-                  if (!judge1Flagged.has(idx)) return null;
-                  const isBothFlagged = judge2Flagged.has(idx);
-                  return (
-                    <div key={idx} className={`border rounded-lg p-2 ${isBothFlagged ? 'border-green-500/50 bg-green-500/5' : 'border-orange-500/50 bg-orange-500/5'}`}>
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${
-                          turn.role === 'assistant' ? 'bg-cyan-500/20 text-cyan-400' : 'bg-slate-600/50 text-slate-400'
-                        }`}>
-                          {turn.role === 'assistant' ? 'Bot' : 'User'} #{idx}
-                        </span>
-                        {isBothFlagged && <span className="text-[10px] text-green-400">Both</span>}
-                      </div>
-                      <p className="text-xs text-slate-300 line-clamp-2">{turn.content}</p>
-                      {turn.reasoning_content && (
-                        <p className="text-[10px] text-slate-500 mt-1 line-clamp-1 italic">
-                          CoT: {turn.reasoning_content.substring(0, 60)}...
-                        </p>
-                      )}
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
-
-          {/* Judge 2 Flagged Turns */}
-          <div>
-            <h4 className="text-xs font-medium text-purple-400 mb-2 flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-purple-500" />
-              {getShortModelName(judge2Model)} Flagged ({judge2Flagged.size})
-            </h4>
-            <div className="space-y-2 max-h-64 overflow-y-auto pr-2">
-              {turns.filter((_: any, i: number) => judge2Flagged.has(i)).length === 0 ? (
-                <p className="text-xs text-slate-500 italic">No turns flagged</p>
-              ) : (
-                turns.map((turn: any, idx: number) => {
-                  if (!judge2Flagged.has(idx)) return null;
-                  const isBothFlagged = judge1Flagged.has(idx);
-                  return (
-                    <div key={idx} className={`border rounded-lg p-2 ${isBothFlagged ? 'border-green-500/50 bg-green-500/5' : 'border-purple-500/50 bg-purple-500/5'}`}>
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${
-                          turn.role === 'assistant' ? 'bg-cyan-500/20 text-cyan-400' : 'bg-slate-600/50 text-slate-400'
-                        }`}>
-                          {turn.role === 'assistant' ? 'Bot' : 'User'} #{idx}
-                        </span>
-                        {isBothFlagged && <span className="text-[10px] text-green-400">Both</span>}
-                      </div>
-                      <p className="text-xs text-slate-300 line-clamp-2">{turn.content}</p>
-                      {turn.reasoning_content && (
-                        <p className="text-[10px] text-slate-500 mt-1 line-clamp-1 italic">
-                          CoT: {turn.reasoning_content.substring(0, 60)}...
-                        </p>
-                      )}
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-/**
  * Main Judge Comparison View
  */
 interface JudgeComparisonViewProps {
@@ -589,40 +364,6 @@ const JudgeComparisonView: React.FC<JudgeComparisonViewProps> = ({ conversationI
   const [error, setError] = useState<string | null>(null);
   const [expandedPatterns, setExpandedPatterns] = useState<Set<number>>(new Set());
   const [collapseAll, setCollapseAll] = useState(false);
-  const [conversationTurns, setConversationTurns] = useState<any[]>([]);
-
-  // Get flagged indices from judge results
-  const getJudgeFlaggedIndices = (judgeResult?: any): Set<number> => {
-    const indices = new Set<number>();
-    if (!judgeResult?.patterns) return indices;
-    for (const pattern of judgeResult.patterns) {
-      if (pattern.quotes) {
-        for (const quote of pattern.quotes) {
-          if (typeof quote.message_index === 'number') {
-            indices.add(quote.message_index);
-          }
-        }
-      }
-    }
-    return indices;
-  };
-
-  // Fetch conversation data
-  useEffect(() => {
-    const fetchConversation = async () => {
-      if (!conversationId) return;
-      try {
-        const response = await fetch(`/api/conversations/${conversationId}`);
-        if (response.ok) {
-          const data = await response.json();
-          setConversationTurns(data?.turns || []);
-        }
-      } catch (err) {
-        console.error('Failed to fetch conversation:', err);
-      }
-    };
-    fetchConversation();
-  }, [conversationId]);
 
   // Fetch comparison data
   useEffect(() => {
@@ -774,28 +515,12 @@ const JudgeComparisonView: React.FC<JudgeComparisonViewProps> = ({ conversationI
                 judge2Patterns={result?._judge_2_result?.patterns}
                 expanded={expandedPatterns.has(idx)}
                 onToggle={() => togglePattern(idx)}
-                conversationTurns={conversationTurns}
-                judge1FlaggedIndices={getJudgeFlaggedIndices(result?._judge_1_result)}
-                judge2FlaggedIndices={getJudgeFlaggedIndices(result?._judge_2_result)}
               />
             ))}
           </div>
         )}
       </div>
 
-      {/* Conversation Preview */}
-      {conversationId && (
-        <div className="mt-6">
-          <ConversationPreview
-            conversationId={conversationId}
-            judge1Result={result?._judge_1_result}
-            judge2Result={result?._judge_2_result}
-            judge1Model={meta.judge_1_model}
-            judge2Model={meta.judge_2_model}
-            onViewFull={() => navigate(`/traces/${conversationId}`)}
-          />
-        </div>
-      )}
     </div>
   );
 };

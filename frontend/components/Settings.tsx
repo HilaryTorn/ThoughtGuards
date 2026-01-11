@@ -361,19 +361,18 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
                 <div>
                   <label className="block text-xs text-slate-400 mb-2">Judge A (Primary)</label>
                   <select
-                    value={settings.auditorModel || 'gemini-2.5-flash-preview-05-20'}
+                    value={settings.auditorModel || 'gemini-2.0-flash'}
                     onChange={(e) => onUpdate({ ...settings, auditorModel: e.target.value })}
-                    disabled={!apiKeys.gemini || apiKeys.gemini.trim() === ''}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
                   >
                     <optgroup label="Gemini">
-                      <option value="gemini-2.5-flash-preview-05-20">Gemini 2.5 Flash (Recommended)</option>
-                      <option value="gemini-2.5-pro-preview-05-06">Gemini 2.5 Pro</option>
-                      <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
+                      <option value="gemini-2.0-flash">Gemini 2.0 Flash (Recommended)</option>
+                      <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+                      <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
                     </optgroup>
-                    <optgroup label="Claude (requires Anthropic key)">
+                    <optgroup label="Claude">
                       <option value="claude-sonnet-4-20250514">Claude Sonnet 4</option>
-                      <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5</option>
+                      <option value="claude-3-5-sonnet-latest">Claude 3.5 Sonnet</option>
                     </optgroup>
                   </select>
                 </div>
@@ -395,13 +394,13 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
                   >
                     <option value="">None (single judge)</option>
                     <optgroup label="Gemini">
-                      <option value="gemini-2.5-flash-preview-05-20">Gemini 2.5 Flash</option>
-                      <option value="gemini-2.5-pro-preview-05-06">Gemini 2.5 Pro</option>
                       <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
+                      <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+                      <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
                     </optgroup>
-                    <optgroup label="Claude (requires Anthropic key)">
+                    <optgroup label="Claude">
                       <option value="claude-sonnet-4-20250514">Claude Sonnet 4</option>
-                      <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5</option>
+                      <option value="claude-3-5-sonnet-latest">Claude 3.5 Sonnet</option>
                     </optgroup>
                   </select>
                   {settings.secondaryJudgeModel && (

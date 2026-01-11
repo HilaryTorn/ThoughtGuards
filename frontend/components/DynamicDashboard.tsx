@@ -203,11 +203,12 @@ const DynamicDashboard: React.FC<DynamicDashboardProps> = ({ settings, onViewTra
     categoryCounts[normalizedCat] = (categoryCounts[normalizedCat] || 0) + (data.detections || 0);
   });
 
-  // Filter detections based on active categories and threshold
+  // Filter detections based on active categories, threshold, and minimum severity (50%)
   const filteredDetections = recentDetections.filter(d =>
     activeCategories.includes(d.category) &&
     settings.categories[d.category] &&
-    d.riskScore >= settings.riskThreshold
+    d.riskScore >= settings.riskThreshold &&
+    d.riskScore >= 50
   );
 
   return (
