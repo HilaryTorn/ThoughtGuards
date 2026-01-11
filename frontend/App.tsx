@@ -504,7 +504,7 @@ const App: React.FC = () => {
           };
         }
 
-        const traceId = `audit-${result.id}`;
+        const traceId = result.id; // ID already includes audit- prefix from executor
         const newTrace: Trace = {
           id: traceId,
           timestamp: new Date(result.timestamp).toLocaleTimeString(),

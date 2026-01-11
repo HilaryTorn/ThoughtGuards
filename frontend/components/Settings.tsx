@@ -369,6 +369,9 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
                       <option value="mistral">Mistral Nemo (LiteLLM)</option>
                       <option value="compassj">CompassJ 7B (LiteLLM)</option>
                     </optgroup>
+                    <optgroup label="Google">
+                      <option value="gemini-flash">Gemini 3 Flash Preview (Google)</option>
+                    </optgroup>
                     <optgroup label="Anthropic">
                       <option value="sonnet">Claude Sonnet 4 (Anthropic)</option>
                       <option value="haiku">Claude Haiku 4.5 (Anthropic)</option>
@@ -395,6 +398,9 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
                     <optgroup label="LiteLLM Proxy">
                       <option value="mistral">Mistral Nemo (LiteLLM)</option>
                       <option value="compassj">CompassJ 7B (LiteLLM)</option>
+                    </optgroup>
+                    <optgroup label="Google">
+                      <option value="gemini-flash">Gemini 3 Flash Preview (Google)</option>
                     </optgroup>
                     <optgroup label="Anthropic">
                       <option value="sonnet">Claude Sonnet 4 (Anthropic)</option>

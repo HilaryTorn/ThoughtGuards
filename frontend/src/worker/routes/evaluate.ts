@@ -5,7 +5,7 @@ const app = new Hono<{ Bindings: Env }>();
 
 // POST /api/evaluate - calls Python evaluation server
 app.post('/', async (c) => {
-  const { conversation_id, judges } = await c.req.json();
+  const { conversation_id, judges, multi_agent_model } = await c.req.json();
   const db = c.env.DB;
 
   // Fetch conversation from D1
@@ -49,6 +49,11 @@ app.post('/', async (c) => {
   const PYTHON_URL = c.env.PYTHON_EVAL_URL || 'http://localhost:8787';
   console.log(`[evaluate] Calling Python server at ${PYTHON_URL}`);
 
+  // Determine the model to use for multi-agent mode
+  // Use explicit multi_agent_model if provided, otherwise use first judge
+  const effectiveModel = multi_agent_model || (judges && judges[0]) || 'sonnet';
+  console.log(`[evaluate] Using multi-agent mode with model: ${effectiveModel}`);
+
   let response;
   try {
     response = await fetch(`${PYTHON_URL}/judge`, {
@@ -56,7 +61,10 @@ app.post('/', async (c) => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         conversation,
-        judges: judges || null  // null = use DEFAULT_JUDGES from Python
+        judges: judges || null,
+        zero_shot: false,  // Hardcoded: use few-shot prompts
+        multi_agent: true,  // Hardcoded: use multi-agent HOW mode
+        multi_agent_model: effectiveModel
       })
     });
   } catch (fetchError: any) {

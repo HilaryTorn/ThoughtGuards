@@ -388,6 +388,8 @@ const AuditView: React.FC<AuditViewProps> = ({ onResult, settings }) => {
           'haiku': 'haiku',
           'mistral': 'mistral',
           'compassj': 'compassj',
+          'gemini-flash': 'gemini-flash',
+          'gemini-3-flash-preview': 'gemini-flash',
         };
 
         // Build judges from settings (defaults to open source models)
@@ -912,7 +914,7 @@ const AuditView: React.FC<AuditViewProps> = ({ onResult, settings }) => {
                     </button>
                     {hasResult && (
                       <button
-                        onClick={() => navigate(`/traces/audit-${testCase.result?.id}`)}
+                        onClick={() => navigate(`/traces/${testCase.result?.id}`)}
                         className="px-4 py-2 rounded-lg text-sm font-medium bg-green-500/20 text-green-400 border border-green-500/50 hover:bg-green-500/30 transition-all"
                       >
                         <ExternalLink size={14} className="inline mr-2" />
