@@ -44,7 +44,7 @@ const TraceList: React.FC<TraceListProps> = ({ traces, onSelectTrace }) => {
                 <th className="p-3 font-semibold">Msgs</th>
                 <th className="p-3 font-semibold">Status</th>
                 <th className="p-3 font-semibold text-center">Agreement</th>
-                <th className="p-3 font-semibold text-right">Risk</th>
+                <th className="p-3 font-semibold text-right">Severity</th>
                 <th className="p-3 font-semibold"></th>
               </tr>
             </thead>
@@ -158,17 +158,31 @@ const TraceList: React.FC<TraceListProps> = ({ traces, onSelectTrace }) => {
                       )}
                     </td>
                     <td className="p-3 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <div className="w-12 h-1.5 bg-slate-800 rounded-full overflow-hidden">
-                          <div
-                            className={`h-full rounded-full ${trace.riskScore > 70 ? 'bg-red-500' : trace.riskScore > 30 ? 'bg-amber-500' : 'bg-emerald-500'}`}
-                            style={{ width: `${trace.riskScore}%` }}
-                          />
-                        </div>
-                        <span className={`text-xs font-mono font-bold ${trace.riskScore > 70 ? 'text-red-400' : 'text-slate-400'}`}>
-                          {trace.riskScore}%
-                        </span>
-                      </div>
+                      {(() => {
+                        // Calculate max severity from patterns if available
+                        const severity = trace.maxSeverity ?? trace.patterns?.reduce((max: number, p: any) => {
+                          const sev = p.severity ?? 0;
+                          return sev > max ? sev : max;
+                        }, 0) ?? 0;
+
+                        // Severity color: 5=red, 4=orange, 3=amber, 2=yellow, 1=emerald, 0=slate
+                        const getSeverityColor = (sev: number) => {
+                          if (sev >= 5) return 'text-red-400 bg-red-500/20 border-red-500/50';
+                          if (sev >= 4) return 'text-orange-400 bg-orange-500/20 border-orange-500/50';
+                          if (sev >= 3) return 'text-amber-400 bg-amber-500/20 border-amber-500/50';
+                          if (sev >= 2) return 'text-yellow-400 bg-yellow-500/20 border-yellow-500/50';
+                          if (sev >= 1) return 'text-emerald-400 bg-emerald-500/20 border-emerald-500/50';
+                          return 'text-slate-500 bg-slate-500/20 border-slate-500/50';
+                        };
+
+                        return severity > 0 ? (
+                          <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold border ${getSeverityColor(severity)}`}>
+                            {severity}
+                          </span>
+                        ) : (
+                          <span className="text-slate-600 text-xs">—</span>
+                        );
+                      })()}
                     </td>
                     <td className="p-3 text-center">
                       <ArrowRight size={16} className="text-slate-600 opacity-0 group-hover:opacity-100 transition-opacity" />

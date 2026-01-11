@@ -52,10 +52,11 @@ export interface DetectionEvent {
   id: string;
   category: DetectionCategory;
   riskScore: number;
+  severity?: number; // Max severity from patterns (1-5 scale)
   timestamp: string;
   snippet: string;
   fullCoT: string;
-  conversationHistory: Message[]; 
+  conversationHistory: Message[];
   matchedPatterns: string[];
   confidence: {
     model: number;
@@ -71,6 +72,7 @@ export interface Trace {
   messageCount: number;
   status: TraceStatus;
   riskScore: number;
+  maxSeverity?: number; // Max severity from patterns (1-5 scale)
   // If flagged, it contains detection details. If clean, this is undefined.
   detectionEvent?: DetectionEvent; 
   // Full conversation is always available

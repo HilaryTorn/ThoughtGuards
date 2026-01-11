@@ -102,10 +102,17 @@ const DynamicDashboard: React.FC<DynamicDashboardProps> = ({ settings, onViewTra
             const rawCategory = t.primaryCategory || primaryDetection?.category || 'Overclaimed';
             const normalizedCategory = normalizeCategory(rawCategory);
 
+            // Calculate max severity from patterns (1-5 scale)
+            const maxSeverity = t.patterns?.reduce((max: number, p: any) => {
+              const sev = p.severity ?? 0;
+              return sev > max ? sev : max;
+            }, 0) || 0;
+
             return {
               id: t.id || t.auditId,
               category: normalizedCategory,
               riskScore: Math.round((t.overallScore || t.riskScore / 100 || 0) * 100),
+              severity: maxSeverity,
               timestamp: t.timestamp || (t.createdAt ? new Date(t.createdAt).toLocaleTimeString() : 'N/A'),
               snippet: evidence.snippet || primaryDetection?.type || t.skillId || 'Audit result',
               fullCoT,
@@ -203,12 +210,11 @@ const DynamicDashboard: React.FC<DynamicDashboardProps> = ({ settings, onViewTra
     categoryCounts[normalizedCat] = (categoryCounts[normalizedCat] || 0) + (data.detections || 0);
   });
 
-  // Filter detections based on active categories, threshold, and minimum severity (50%)
+  // Filter detections based on active categories and severity 3-5 (high severity only for dashboard)
   const filteredDetections = recentDetections.filter(d =>
     activeCategories.includes(d.category) &&
     settings.categories[d.category] &&
-    d.riskScore >= settings.riskThreshold &&
-    d.riskScore >= 50
+    (d.severity ?? 0) >= 3 // Only show severity 3-5 on dashboard
   );
 
   return (

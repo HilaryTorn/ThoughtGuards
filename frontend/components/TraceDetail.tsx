@@ -97,8 +97,9 @@ const TraceDetail: React.FC<TraceDetailProps> = ({ trace, onBack, onAction }) =>
   if (!trace) return null;
 
   const event = trace.detectionEvent;
-  // Show analysis panel for flagged, review, confirmed, reviewed, and false_positive statuses
-  const isFlagged = trace.status === 'flagged' || trace.status === 'confirmed' || trace.status === 'reviewed' || trace.status === 'false_positive' || trace.status === 'review';
+  // Show analysis panel for flagged, review, confirmed, reviewed, false_positive statuses OR when patterns exist
+  const hasPatterns = (trace.patterns?.length ?? 0) > 0;
+  const isFlagged = trace.status === 'flagged' || trace.status === 'confirmed' || trace.status === 'reviewed' || trace.status === 'false_positive' || trace.status === 'review' || hasPatterns;
   // Normalize legacy category names to new HOW verbs
   const normalizedCategory = event ? normalizeCategory(event.category) : null;
   const catStyle = normalizedCategory ? CATEGORY_STYLES[normalizedCategory] : null;
@@ -222,7 +223,9 @@ const TraceDetail: React.FC<TraceDetailProps> = ({ trace, onBack, onAction }) =>
                 </span>
               )}
             </h2>
-            <p className="text-xs text-slate-500 font-mono">{trace.timestamp} • Risk: {trace.riskScore}%</p>
+            <p className="text-xs text-slate-500 font-mono">{trace.timestamp} • Severity: {
+              trace.maxSeverity ?? trace.patterns?.reduce((max: number, p: any) => Math.max(max, p.severity ?? 0), 0) ?? 0
+            }/5</p>
           </div>
         </div>
 
@@ -281,7 +284,7 @@ const TraceDetail: React.FC<TraceDetailProps> = ({ trace, onBack, onAction }) =>
         {/* LEFT: Conversation Thread */}
         <div className={`
           flex flex-col glass-panel rounded-xl border-slate-800 overflow-hidden h-full
-          ${isFlagged && event ? 'col-span-5' : 'col-span-8 col-start-3'}
+          ${(isFlagged || hasPatterns) ? 'col-span-5' : 'col-span-8 col-start-3'}
         `}>
           <div className="p-3 border-b border-slate-800 bg-slate-900/50">
             <h3 className="font-semibold text-slate-300 flex items-center gap-2 text-sm">
@@ -377,8 +380,8 @@ const TraceDetail: React.FC<TraceDetailProps> = ({ trace, onBack, onAction }) =>
           </div>
         </div>
 
-        {/* RIGHT: Analysis Panel (Only if flagged and has event) */}
-        {isFlagged && event && catStyle && (
+        {/* RIGHT: Analysis Panel (Show if flagged, has patterns, or has event) */}
+        {(isFlagged || hasPatterns) && (
           <div className="col-span-7 flex flex-col gap-4 overflow-y-auto pb-6">
 
              {/* Inter-Judge Agreement Panel (if cross-validation data available) */}
@@ -410,24 +413,35 @@ const TraceDetail: React.FC<TraceDetailProps> = ({ trace, onBack, onAction }) =>
                  {/* Issue Card */}
                  <div className="p-5">
                    {/* Header Row */}
-                   <div className="flex items-start justify-between mb-3">
-                     <div className="flex items-center gap-2.5">
-                       <span className={`w-2.5 h-2.5 rounded-full ${trace.riskScore >= 70 ? 'bg-red-500' : trace.riskScore >= 40 ? 'bg-amber-500' : 'bg-emerald-500'}`} />
-                       <span className="font-mono text-sm font-semibold text-cyan-400">
-                         {normalizedCategory?.substring(0, 2).toUpperCase() || 'DT'}-01
-                       </span>
-                       <span className="text-sm text-slate-500">— {catStyle?.label} action</span>
-                     </div>
-                     <span className={`text-[11px] font-semibold px-2.5 py-1 rounded uppercase tracking-wide border ${
-                       trace.riskScore >= 70
-                         ? 'bg-red-500/15 text-red-400 border-red-500/30'
-                         : trace.riskScore >= 40
-                           ? 'bg-amber-500/15 text-amber-400 border-amber-500/30'
-                           : 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
-                     }`}>
-                       {trace.riskScore >= 70 ? 'High' : trace.riskScore >= 40 ? 'Medium' : 'Low'}
-                     </span>
-                   </div>
+                   {(() => {
+                     // Calculate max severity from patterns
+                     const maxSeverity = trace.patterns?.reduce((max: number, p: any) => Math.max(max, p.severity ?? 0), 0) ?? 0;
+
+                     // Severity color mapping
+                     const getSeverityStyle = (sev: number) => {
+                       if (sev >= 5) return { dot: 'bg-red-500', badge: 'bg-red-500/15 text-red-400 border-red-500/30', label: 'Critical' };
+                       if (sev >= 4) return { dot: 'bg-orange-500', badge: 'bg-orange-500/15 text-orange-400 border-orange-500/30', label: 'High' };
+                       if (sev >= 3) return { dot: 'bg-amber-500', badge: 'bg-amber-500/15 text-amber-400 border-amber-500/30', label: 'Medium' };
+                       if (sev >= 2) return { dot: 'bg-yellow-500', badge: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30', label: 'Low' };
+                       return { dot: 'bg-emerald-500', badge: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30', label: 'Minimal' };
+                     };
+                     const style = getSeverityStyle(maxSeverity);
+
+                     return (
+                       <div className="flex items-start justify-between mb-3">
+                         <div className="flex items-center gap-2.5">
+                           <span className={`w-2.5 h-2.5 rounded-full ${style.dot}`} />
+                           <span className="font-mono text-sm font-semibold text-cyan-400">
+                             {normalizedCategory?.substring(0, 2).toUpperCase() || 'DT'}-01
+                           </span>
+                           <span className="text-sm text-slate-500">— {catStyle?.label} action</span>
+                         </div>
+                         <span className={`text-[11px] font-semibold px-2.5 py-1 rounded uppercase tracking-wide border ${style.badge}`}>
+                           {style.label} ({maxSeverity}/5)
+                         </span>
+                       </div>
+                     );
+                   })()}
 
                    {/* Triad Display - derive from category if possible */}
                    {(() => {

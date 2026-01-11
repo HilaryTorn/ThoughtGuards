@@ -64,21 +64,28 @@ const DetectionCard: React.FC<DetectionCardProps> = ({ event, onViewTrace }) => 
           </div>
 
           <div className="flex items-center gap-4 w-full sm:w-auto justify-end">
-            {/* Risk Score */}
-            <div className="flex items-center gap-2">
-              <div className="text-right">
-                <div className={`text-sm font-bold ${event.riskScore > 80 ? 'text-red-400' : 'text-amber-400'}`}>
-                  {event.riskScore}%
+            {/* Severity Score */}
+            {(() => {
+              const severity = event.severity ?? 0;
+              const getSeverityColor = (sev: number) => {
+                if (sev >= 5) return 'text-red-400 bg-red-500/20 border-red-500/50';
+                if (sev >= 4) return 'text-orange-400 bg-orange-500/20 border-orange-500/50';
+                if (sev >= 3) return 'text-amber-400 bg-amber-500/20 border-amber-500/50';
+                if (sev >= 2) return 'text-yellow-400 bg-yellow-500/20 border-yellow-500/50';
+                if (sev >= 1) return 'text-emerald-400 bg-emerald-500/20 border-emerald-500/50';
+                return 'text-slate-500 bg-slate-500/20 border-slate-500/50';
+              };
+              return (
+                <div className="flex items-center gap-2">
+                  <div className="text-right">
+                    <div className="text-[10px] text-slate-500 uppercase tracking-wide mb-0.5">Severity</div>
+                  </div>
+                  <span className={`inline-flex items-center justify-center w-8 h-8 rounded-full text-sm font-bold border ${getSeverityColor(severity)}`}>
+                    {severity > 0 ? severity : '—'}
+                  </span>
                 </div>
-                <div className="text-[10px] text-slate-500 uppercase tracking-wide">Risk</div>
-              </div>
-              <div className="w-16 h-1.5 bg-slate-800 rounded-full overflow-hidden">
-                <div 
-                  className={`h-full rounded-full ${event.riskScore > 80 ? 'bg-red-500' : 'bg-amber-500'}`} 
-                  style={{ width: `${event.riskScore}%` }}
-                />
-              </div>
-            </div>
+              );
+            })()}
 
             <div className="text-slate-500 text-xs font-mono">{event.timestamp}</div>
             

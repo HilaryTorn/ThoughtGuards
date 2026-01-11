@@ -88,10 +88,23 @@ auditReportsRoutes.get('/', async (c) => {
       }
     }
 
-    // Helper to determine status from score and agreement
-    const getStatus = (overallScore: number, detectionMetadata: string | null): string => {
-      // If manipulation detected (score >= 0.5), always flag
-      if (overallScore >= 0.5) {
+    // Helper to determine status from patterns and agreement
+    const getStatus = (patternsJson: string | null, detectionMetadata: string | null): string => {
+      // Parse patterns to check if any issues were detected
+      let hasPatterns = false;
+      if (patternsJson) {
+        try {
+          const patterns = JSON.parse(patternsJson);
+          // Only consider as having patterns if there are items with severity > 0
+          hasPatterns = Array.isArray(patterns) && patterns.length > 0 &&
+            patterns.some((p: any) => (p.severity ?? 0) > 0);
+        } catch {
+          // If parsing fails, assume no patterns
+        }
+      }
+
+      // If any patterns with severity detected, flag it
+      if (hasPatterns) {
         return 'flagged';
       }
 
@@ -109,23 +122,38 @@ auditReportsRoutes.get('/', async (c) => {
         }
       }
 
-      // High agreement that it's clean
+      // Only clean if no patterns detected AND high agreement
       return 'clean';
     };
 
+    // Helper to calculate max severity from patterns
+    const getMaxSeverity = (patternsJson: string | null): number => {
+      if (!patternsJson) return 0;
+      try {
+        const patterns = JSON.parse(patternsJson);
+        if (!Array.isArray(patterns)) return 0;
+        return patterns.reduce((max: number, p: any) => Math.max(max, p.severity ?? 0), 0);
+      } catch {
+        return 0;
+      }
+    };
+
     // Convert to frontend-expected format (matching old audit-results format)
-    const traces = (result.results || []).map((row: any) => ({
-      id: row.report_id,
-      timestamp: row.created_at ? new Date(row.created_at).toLocaleTimeString() : 'N/A',
-      messageCount: 0,
-      status: getStatus(row.overall_score || 0, row.detection_metadata),
-      riskScore: row.overall_score * 100 || 0,
-      detectionEvent: row.overall_score >= 0.5 ? {
-        category: row.primary_category || 'Unknown',
-        timestamp: row.created_at,
-        context: `Skill: ${row.skill_id}`,
-        severity: 'high'
-      } : undefined,
+    const traces = (result.results || []).map((row: any) => {
+      const maxSeverity = getMaxSeverity(row.patterns);
+      return {
+        id: row.report_id,
+        timestamp: row.created_at ? new Date(row.created_at).toLocaleTimeString() : 'N/A',
+        messageCount: 0,
+        status: getStatus(row.patterns, row.detection_metadata),
+        riskScore: row.overall_score * 100 || 0,
+        maxSeverity,
+        detectionEvent: maxSeverity > 0 ? {
+          category: row.primary_category || 'Unknown',
+          timestamp: row.created_at,
+          context: `Skill: ${row.skill_id}`,
+          severity: maxSeverity
+        } : undefined,
       conversation: row.conversation_snapshot ? JSON.parse(row.conversation_snapshot) : [],
       auditId: row.report_id,
       conversationId: row.conversation_id,
@@ -147,7 +175,8 @@ auditReportsRoutes.get('/', async (c) => {
       createdAt: row.created_at || new Date().toISOString(),
       updatedAt: row.created_at || new Date().toISOString(),
       crossValidation: cvMap[row.conversation_id] || undefined,
-    }));
+      };
+    });
 
     const reports = (result.results || []).map(convertDbRowToReport);
 
