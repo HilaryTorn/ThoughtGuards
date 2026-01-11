@@ -175,7 +175,14 @@ const TraceDetail: React.FC<TraceDetailProps> = ({ trace, onBack, onAction }) =>
         return messages;
       });
     }
-    return trace.conversation;
+    // Fallback: transform trace.conversation to ensure reasoning_trace field exists
+    return (trace.conversation || []).map((msg: any) => ({
+      role: msg.role === 'customer' ? 'user' : msg.role,
+      content: msg.content,
+      timestamp: msg.timestamp,
+      reasoning_trace: msg.reasoning_trace || msg.reasoning_content || undefined,
+      tool_calls: msg.tool_calls || undefined,
+    }));
   }, [conversationWithTools, trace.conversation]);
 
   // Collect all tool calls from conversation - prioritize fresh API data
