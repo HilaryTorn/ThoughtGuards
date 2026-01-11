@@ -540,7 +540,7 @@ CREATE INDEX IF NOT EXISTS idx_drift_events_detected_at ON model_drift_events(de
 -- 7c. New cross_validation_runs table
 CREATE TABLE IF NOT EXISTS cross_validation_runs (
     cv_id TEXT PRIMARY KEY,
-    audit_id TEXT NOT NULL,
+    audit_id TEXT,  -- Optional reference to an audit report
     conversation_id TEXT NOT NULL,
     
     -- Judge models

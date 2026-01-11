@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Play, CheckCircle, AlertTriangle, Loader2, FileText, X, Search, Filter, Eye, PlayCircle, Pause, ChevronLeft, ChevronRight, Clock, Zap, CheckSquare, Square, Plus, BarChart3, List } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useSearchParams, useNavigate } from 'react-router-dom';
+import { Play, CheckCircle, AlertTriangle, Loader2, FileText, X, Search, Filter, Eye, PlayCircle, Pause, ChevronLeft, ChevronRight, Clock, Zap, CheckSquare, Square, Plus, BarChart3, List, ExternalLink } from 'lucide-react';
 import { EnrichedTestCase, AuditResult, Skill, Conversation } from '../lib/types';
-import { executeMultiSkillAudit } from '../lib/multiSkillExecutor';
+import { executeMultiSkillAuditWithCrossValidation } from '../lib/multiSkillExecutor';
 import { executeMultiRunAudit, RunConfig } from '../lib/multiRunExecutor';
 import { loadAllTestCases } from '../lib/loadTestCases';
 import { AppSettings } from '../types';
@@ -28,6 +29,14 @@ interface TestCaseWithStatus extends EnrichedTestCase {
 const ITEMS_PER_PAGE = 20;
 
 const AuditView: React.FC<AuditViewProps> = ({ onResult, settings }) => {
+  // Navigation
+  const navigate = useNavigate();
+
+  // URL params for auto-run feature
+  const [searchParams, setSearchParams] = useSearchParams();
+  const autoRunConversationId = searchParams.get('autorun');
+  const autoRunTriggeredRef = useRef(false);
+
   if (!settings) {
     return <div className="text-slate-400">Settings not available</div>;
   }
@@ -361,21 +370,26 @@ const AuditView: React.FC<AuditViewProps> = ({ onResult, settings }) => {
           runConfig,
           {
             sensitivity: settings.sensitivity,
-            thinkingBudget: settings.thinkingBudget,
-            includeValidatorCoT: settings.includeValidatorCoT,
+            includeValidatorCoT: true, // Always include CoT
           }
         );
-        
+
         result = multiRunResult;
       } else {
-        // Use single-run intelligent multi-skill execution
-        result = await executeMultiSkillAudit(
+        // Use single-run intelligent multi-skill execution (with optional cross-validation)
+        console.log('[AuditView] Settings for audit:', {
+          auditorModel: settings.auditorModel,
+          enableCrossValidation: settings.enableCrossValidation,
+          secondaryJudgeModel: settings.secondaryJudgeModel,
+        });
+        result = await executeMultiSkillAuditWithCrossValidation(
           testCase,
           settings.auditorModel,
           {
             sensitivity: settings.sensitivity,
-            thinkingBudget: settings.thinkingBudget,
-            includeValidatorCoT: settings.includeValidatorCoT,
+            includeValidatorCoT: true, // Always include CoT
+            enableCrossValidation: settings.enableCrossValidation,
+            secondaryJudgeModel: settings.secondaryJudgeModel,
           }
         );
       }
@@ -416,13 +430,16 @@ const AuditView: React.FC<AuditViewProps> = ({ onResult, settings }) => {
         };
 
         // Build audit report in new format
+        const reportId = result.id || `audit-${testCase.conversation_id}-${Date.now()}`;
+        const skillId = result.skill_id || 'taxonomy-auditor';
+
         const auditReport = {
-          report_id: result.id,
+          report_id: reportId,
           conversation_id: result.conversation_id || testCase.conversation_id,
           created_at: now,
           created_by: null,
           execution_duration_ms: null,
-          skill_id: result.skill_id,
+          skill_id: skillId,
           skill_version: '1.0.0', // Default version
           model_name: result.model_name,
           model_version: null,
@@ -471,7 +488,23 @@ const AuditView: React.FC<AuditViewProps> = ({ onResult, settings }) => {
           report_id: auditReport.report_id,
           conversation_id: auditReport.conversation_id,
           skill_id: auditReport.skill_id,
+          result_id: result.id,
+          result_conversation_id: result.conversation_id,
+          result_skill_id: result.skill_id,
+          testCase_conversation_id: testCase.conversation_id,
         });
+
+        // Validate before sending - if any field is missing, skip the save
+        if (!auditReport.report_id || !auditReport.conversation_id || !auditReport.skill_id) {
+          console.error('Missing required fields in audit report - SKIPPING SAVE:', {
+            report_id: auditReport.report_id,
+            conversation_id: auditReport.conversation_id,
+            skill_id: auditReport.skill_id,
+            result_keys: Object.keys(result || {}),
+            testCase_keys: Object.keys(testCase || {}),
+          });
+          throw new Error('Missing required fields - cannot save to database');
+        }
 
         const response = await fetch('/api/audit-reports', {
           method: 'POST',
@@ -528,6 +561,26 @@ const AuditView: React.FC<AuditViewProps> = ({ onResult, settings }) => {
       setAutoRunQueue(prev => prev.slice(1));
     }
   }, [autoRunEnabled, autoRunQueue, currentlyRunning, testCasesWithStatus, handleRunAudit]);
+
+  // Auto-run specific conversation from URL parameter (from Red Team Lab)
+  useEffect(() => {
+    if (!autoRunConversationId || autoRunTriggeredRef.current || isLoadingCases || currentlyRunning) {
+      return;
+    }
+
+    // Find the test case to auto-run
+    const testCase = testCasesWithStatus.get(autoRunConversationId);
+    if (testCase && (testCase.status === 'pending' || testCase.status === 'completed')) {
+      console.log(`[AuditView] Auto-running audit for conversation: ${autoRunConversationId}`);
+      autoRunTriggeredRef.current = true;
+
+      // Clear the URL parameter to prevent re-triggering
+      setSearchParams({});
+
+      // Run the audit
+      handleRunAudit(testCase);
+    }
+  }, [autoRunConversationId, testCasesWithStatus, isLoadingCases, currentlyRunning, handleRunAudit, setSearchParams]);
 
   // Initialize auto-run queue with pending cases
   const initializeAutoRunQueue = useCallback(() => {
@@ -905,6 +958,15 @@ const AuditView: React.FC<AuditViewProps> = ({ onResult, settings }) => {
                     >
                       <Eye size={16} />
                     </button>
+                    {hasResult && (
+                      <button
+                        onClick={() => navigate(`/traces/audit-${testCase.result?.id}`)}
+                        className="px-4 py-2 rounded-lg text-sm font-medium bg-green-500/20 text-green-400 border border-green-500/50 hover:bg-green-500/30 transition-all"
+                      >
+                        <ExternalLink size={14} className="inline mr-2" />
+                        View Trace
+                      </button>
+                    )}
                     <button
                       onClick={() => handleRunAudit(testCase)}
                       disabled={isRunning}
@@ -912,7 +974,7 @@ const AuditView: React.FC<AuditViewProps> = ({ onResult, settings }) => {
                         isRunning
                           ? 'bg-slate-800 text-slate-400 cursor-not-allowed'
                           : hasResult
-                          ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/50 hover:bg-cyan-500/20'
+                          ? 'bg-slate-700/50 text-slate-400 border border-slate-600 hover:bg-slate-700'
                           : 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/50 hover:bg-cyan-500/30'
                       }`}
                     >

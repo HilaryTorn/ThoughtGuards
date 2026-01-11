@@ -1,7 +1,30 @@
 import React from 'react';
 import { Trace } from '../types';
-import { AlertCircle, CheckCircle, HelpCircle, ArrowRight, AlertTriangle, XCircle } from 'lucide-react';
+import { AlertCircle, CheckCircle, HelpCircle, ArrowRight, AlertTriangle, XCircle, Scale } from 'lucide-react';
 import { CATEGORY_STYLES } from '../constants';
+
+/**
+ * Format timestamp to compact readable format
+ */
+function formatTimestamp(timestamp: string): string {
+  if (!timestamp) return '—';
+  // Handle relative timestamps like "Yesterday", "10:42 AM"
+  if (timestamp.toLowerCase().includes('yesterday') || timestamp.includes('AM') || timestamp.includes('PM')) {
+    return timestamp;
+  }
+  try {
+    const date = new Date(timestamp);
+    if (isNaN(date.getTime())) return timestamp;
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+  } catch {
+    return timestamp;
+  }
+}
 
 interface TraceListProps {
   traces: Trace[];
@@ -16,12 +39,13 @@ const TraceList: React.FC<TraceListProps> = ({ traces, onSelectTrace }) => {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="border-b border-slate-800 bg-slate-900/50 text-xs uppercase tracking-wider text-slate-500">
-                <th className="p-4 font-semibold">Timestamp</th>
-                <th className="p-4 font-semibold">Conversation ID</th>
-                <th className="p-4 font-semibold">Messages</th>
-                <th className="p-4 font-semibold">Status</th>
-                <th className="p-4 font-semibold text-right">Risk Score</th>
-                <th className="p-4 font-semibold"></th>
+                <th className="p-3 font-semibold">Timestamp</th>
+                <th className="p-3 font-semibold">Conversation ID</th>
+                <th className="p-3 font-semibold">Msgs</th>
+                <th className="p-3 font-semibold">Status</th>
+                <th className="p-3 font-semibold text-center">Agreement</th>
+                <th className="p-3 font-semibold text-right">Risk</th>
+                <th className="p-3 font-semibold"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800">
@@ -108,32 +132,45 @@ const TraceList: React.FC<TraceListProps> = ({ traces, onSelectTrace }) => {
                       ${trace.status === 'flagged' || trace.status === 'confirmed' || trace.status === 'review' ? 'bg-red-500/5' : 'bg-transparent'}
                     `}
                   >
-                    <td className="p-4 text-sm text-slate-400 font-mono whitespace-nowrap">
-                      {trace.timestamp}
+                    <td className="p-3 text-xs text-slate-400 whitespace-nowrap">
+                      {formatTimestamp(trace.timestamp)}
                     </td>
-                    <td className="p-4 text-sm font-mono text-slate-300">
+                    <td className="p-3 text-xs font-mono text-slate-300">
                       {trace.id}
                     </td>
-                    <td className="p-4 text-sm text-slate-400">
+                    <td className="p-3 text-xs text-slate-400">
                       {trace.messageCount}
                     </td>
-                    <td className="p-4">
+                    <td className="p-3">
                       {renderStatus()}
                     </td>
-                    <td className="p-4 text-right">
-                      <div className="flex items-center justify-end gap-3">
-                        <div className="w-16 h-1.5 bg-slate-800 rounded-full overflow-hidden">
-                          <div 
-                            className={`h-full rounded-full ${trace.riskScore > 70 ? 'bg-red-500' : trace.riskScore > 30 ? 'bg-amber-500' : 'bg-emerald-500'}`} 
+                    <td className="p-3 text-center">
+                      {trace.crossValidation?._meta?.agreement_rate !== undefined ? (
+                        <span className={`text-xs font-mono font-bold flex items-center justify-center gap-1 ${
+                          trace.crossValidation._meta.agreement_rate >= 0.8 ? 'text-green-400' :
+                          trace.crossValidation._meta.agreement_rate >= 0.5 ? 'text-yellow-400' : 'text-orange-400'
+                        }`}>
+                          <Scale size={12} />
+                          {Math.round(trace.crossValidation._meta.agreement_rate * 100)}%
+                        </span>
+                      ) : (
+                        <span className="text-slate-600 text-xs">—</span>
+                      )}
+                    </td>
+                    <td className="p-3 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <div className="w-12 h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full ${trace.riskScore > 70 ? 'bg-red-500' : trace.riskScore > 30 ? 'bg-amber-500' : 'bg-emerald-500'}`}
                             style={{ width: `${trace.riskScore}%` }}
                           />
                         </div>
-                        <span className={`text-sm font-mono font-bold ${trace.riskScore > 70 ? 'text-red-400' : 'text-slate-400'}`}>
+                        <span className={`text-xs font-mono font-bold ${trace.riskScore > 70 ? 'text-red-400' : 'text-slate-400'}`}>
                           {trace.riskScore}%
                         </span>
                       </div>
                     </td>
-                    <td className="p-4 text-center">
+                    <td className="p-3 text-center">
                       <ArrowRight size={16} className="text-slate-600 opacity-0 group-hover:opacity-100 transition-opacity" />
                     </td>
                   </tr>

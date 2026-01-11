@@ -4,6 +4,15 @@ import IssueCard, { IssueCardProps } from './IssueCard';
 import { HOWCode, WHYCode, TARGETCode } from '../types';
 import { HOW_VERBS } from '../constants';
 
+export interface ConfidenceBreakdown {
+  final_confidence: number;
+  base_confidence: number;
+  agreement_factor: number;
+  evidence_factor: number;
+  calibration_factor?: number;
+  breakdown?: string;
+}
+
 export interface TaxonomyPattern {
   triad: string;
   how_code: HOWCode;
@@ -24,11 +33,22 @@ export interface TaxonomyPattern {
   how?: { code: HOWCode; verb: string; name: string };
   why?: { code: WHYCode; verb: string; name: string };
   target?: { code: TARGETCode; verb: string; name: string };
+  // Cross-validation match type info (optional - from AggregatedPattern)
+  _match_type?: 'exact' | 'partial' | 'single_judge';
+  _similarity?: number;
+  _detected_by?: 'judge_1' | 'judge_2';
+  _confidence_breakdown?: ConfidenceBreakdown;
+  _axis_disagreement?: Record<string, { j1: string; j2: string }>;
+  _judge1_confidence?: number;
+  _judge2_confidence?: number;
 }
 
 interface DetectedIssuesPanelProps {
   patterns: TaxonomyPattern[];
   className?: string;
+  // Judge names for cross-validation display (optional)
+  judge1Name?: string;
+  judge2Name?: string;
 }
 
 /**
@@ -70,8 +90,9 @@ function generateIssueId(pattern: TaxonomyPattern, index: number): string {
  * Generates a title from the HOW verb
  */
 function generateTitle(pattern: TaxonomyPattern): string {
-  const howVerb = pattern.how?.verb || HOW_VERBS[pattern.how_code]?.verb || pattern.how_code;
-  return `${howVerb} action`;
+  // Use HOW_VERBS constant first to ensure clean verbs without "action"
+  const howVerb = HOW_VERBS[pattern.how_code]?.verb || pattern.how?.verb || pattern.how_code;
+  return howVerb;
 }
 
 /**
@@ -99,6 +120,8 @@ function getImpactNote(pattern: TaxonomyPattern): string | undefined {
 const DetectedIssuesPanel: React.FC<DetectedIssuesPanelProps> = ({
   patterns,
   className = '',
+  judge1Name,
+  judge2Name,
 }) => {
   const [isPanelExpanded, setIsPanelExpanded] = useState(true);
 
@@ -165,6 +188,15 @@ const DetectedIssuesPanel: React.FC<DetectedIssuesPanelProps> = ({
                 source: q.source,
               }))}
               impactNote={getImpactNote(pattern)}
+              matchType={pattern._match_type}
+              matchSimilarity={pattern._similarity}
+              detectedBy={pattern._detected_by}
+              judge1Name={judge1Name}
+              judge2Name={judge2Name}
+              confidenceBreakdown={pattern._confidence_breakdown}
+              judge1Confidence={pattern._judge1_confidence}
+              judge2Confidence={pattern._judge2_confidence}
+              axisDisagreement={pattern._axis_disagreement}
             />
           ))}
         </div>

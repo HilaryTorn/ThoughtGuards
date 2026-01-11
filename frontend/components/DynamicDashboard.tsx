@@ -6,6 +6,7 @@ import StatsCard from './StatsCard';
 import DetectionCard from './DetectionCard';
 import Sidebar from './Sidebar';
 import SystemMetrics from './SystemMetrics';
+import JudgeComparisonStats from './JudgeComparisonStats';
 
 // Helper to normalize legacy category names to new HOW verbs
 function normalizeCategory(category: string): DetectionCategory {
@@ -202,11 +203,12 @@ const DynamicDashboard: React.FC<DynamicDashboardProps> = ({ settings, onViewTra
     categoryCounts[normalizedCat] = (categoryCounts[normalizedCat] || 0) + (data.detections || 0);
   });
 
-  // Filter detections based on active categories and threshold
+  // Filter detections based on active categories, threshold, and minimum severity (50%)
   const filteredDetections = recentDetections.filter(d =>
     activeCategories.includes(d.category) &&
     settings.categories[d.category] &&
-    d.riskScore >= settings.riskThreshold
+    d.riskScore >= settings.riskThreshold &&
+    d.riskScore >= 50
   );
 
   return (
@@ -223,6 +225,11 @@ const DynamicDashboard: React.FC<DynamicDashboardProps> = ({ settings, onViewTra
         {(Object.keys(CATEGORY_STYLES) as DetectionCategory[]).map(cat => (
           <StatsCard key={cat} style={CATEGORY_STYLES[cat]} count={categoryCounts[cat]} />
         ))}
+      </div>
+
+      {/* Judge Comparison Stats */}
+      <div className="mb-8">
+        <JudgeComparisonStats />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">

@@ -1,6 +1,7 @@
 import React from 'react';
-import { ArrowLeft, CheckCircle, AlertTriangle, XCircle, MessageSquare, AlertCircle } from 'lucide-react';
-import { Trace, Message, DetectionCategory, HOWCode, WHYCode, TARGETCode } from '../types';
+import { ArrowLeft, CheckCircle, AlertTriangle, XCircle, MessageSquare, AlertCircle, Scale, ArrowRight } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Trace, Message, DetectionCategory, HOWCode, WHYCode, TARGETCode, CrossValidationMeta } from '../types';
 import { CATEGORY_STYLES, LEGACY_CATEGORY_MAP, HOW_VERBS, WHY_VERBS, TARGET_VERBS } from '../constants';
 import DetectedIssuesPanel from './DetectedIssuesPanel';
 import ConversationTurn from './ConversationTurn';
@@ -18,6 +19,69 @@ function normalizeCategory(category: string): DetectionCategory {
   return 'Fabricated';
 }
 
+/**
+ * Agreement Panel - Shows inter-judge agreement when cross-validation data is available
+ */
+const AgreementPanel: React.FC<{
+  meta: CrossValidationMeta;
+  conversationId: string;
+  onViewComparison: () => void;
+}> = ({ meta, conversationId, onViewComparison }) => {
+  const agreementRate = meta.agreement_rate || 0;
+  const disagreementCount = (meta.unmatched_j1 || 0) + (meta.unmatched_j2 || 0);
+
+  // Color based on agreement rate
+  const getAgreementColor = () => {
+    if (agreementRate > 0.85) return 'green';
+    if (agreementRate >= 0.5) return 'orange';
+    return 'red';
+  };
+  const color = getAgreementColor();
+
+  return (
+    <div className="bg-slate-900/50 border border-slate-800 rounded-lg p-4 mb-4">
+      <h3 className="text-sm font-medium text-slate-300 mb-3 flex items-center gap-2">
+        <Scale size={14} className="text-cyan-500" />
+        Inter-Judge Agreement Analysis
+      </h3>
+
+      {/* Progress bar */}
+      <div className="h-2 bg-slate-800 rounded-full overflow-hidden mb-3">
+        <div
+          className={`h-full bg-gradient-to-r from-${color}-500 to-${color}-400`}
+          style={{ width: `${agreementRate * 100}%` }}
+        />
+      </div>
+
+      {/* Stats row */}
+      <div className="flex gap-6 text-xs flex-wrap">
+        <span className="flex items-center gap-1.5">
+          <span className="w-2 h-2 rounded-full bg-green-500" />
+          <span className="text-slate-400">{meta.exact_matches || 0} consensus</span>
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="w-2 h-2 rounded-full bg-yellow-500" />
+          <span className="text-slate-400">{meta.partial_matches || 0} partial</span>
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="w-2 h-2 rounded-full bg-orange-500" />
+          <span className="text-slate-400">{disagreementCount} single-judge</span>
+        </span>
+      </div>
+
+      {/* Link to comparison view */}
+      <button
+        onClick={onViewComparison}
+        className="mt-3 flex items-center gap-2 px-3 py-1.5 bg-slate-800 border border-slate-700 rounded text-cyan-400 text-xs hover:bg-slate-700 transition-colors"
+      >
+        <Scale size={14} />
+        View Full Comparison
+        <ArrowRight size={14} />
+      </button>
+    </div>
+  );
+};
+
 interface TraceDetailProps {
   trace: Trace | null;
   onBack: () => void;
@@ -25,8 +89,10 @@ interface TraceDetailProps {
 }
 
 const TraceDetail: React.FC<TraceDetailProps> = ({ trace, onBack, onAction }) => {
+  const navigate = useNavigate();
   const [conversationWithTools, setConversationWithTools] = React.useState<any>(null);
   const [loading, setLoading] = React.useState(false);
+  const [crossValidationMeta, setCrossValidationMeta] = React.useState<CrossValidationMeta | null>(null);
 
   if (!trace) return null;
 
@@ -58,6 +124,29 @@ const TraceDetail: React.FC<TraceDetailProps> = ({ trace, onBack, onAction }) =>
 
     fetchConversationWithTools();
   }, [trace.conversationId, conversationWithTools]);
+
+  // Fetch cross-validation data if available
+  React.useEffect(() => {
+    const fetchCrossValidation = async () => {
+      if (!trace.conversationId) return;
+
+      try {
+        const response = await fetch(`/api/judge-comparison/${trace.conversationId}`);
+        if (response.ok) {
+          const data = await response.json() as { success?: boolean; result?: { _meta?: CrossValidationMeta } };
+          if (data.success && data.result) {
+            // Extract _meta from the result
+            setCrossValidationMeta(data.result._meta || null);
+          }
+        }
+      } catch (error) {
+        // Cross-validation data not available, that's okay
+        console.debug('No cross-validation data available:', error);
+      }
+    };
+
+    fetchCrossValidation();
+  }, [trace.conversationId]);
 
   // Use actual conversation without mock padding
   // Priority 1: Use fresh data from API if available
@@ -114,8 +203,24 @@ const TraceDetail: React.FC<TraceDetailProps> = ({ trace, onBack, onAction }) =>
             <ArrowLeft size={20} />
           </button>
           <div>
-            <h2 className="text-lg font-bold text-slate-100">
+            <h2 className="text-lg font-bold text-slate-100 flex items-center gap-3">
               Trace {shortTraceId}
+              {/* Agreement Badge (if cross-validation data available) */}
+              {crossValidationMeta && (
+                <span
+                  className={`px-2 py-0.5 text-xs font-medium rounded ${
+                    crossValidationMeta.agreement_rate > 0.85
+                      ? 'bg-green-500/20 text-green-400 border border-green-500/50'
+                      : crossValidationMeta.agreement_rate >= 0.5
+                      ? 'bg-orange-500/20 text-orange-400 border border-orange-500/50'
+                      : 'bg-red-500/20 text-red-400 border border-red-500/50'
+                  }`}
+                  title={`${crossValidationMeta.agreement_type || 'unknown'} agreement between judges`}
+                >
+                  <Scale size={12} className="inline mr-1" />
+                  {Math.round(crossValidationMeta.agreement_rate * 100)}% agreement
+                </span>
+              )}
             </h2>
             <p className="text-xs text-slate-500 font-mono">{trace.timestamp} • Risk: {trace.riskScore}%</p>
           </div>
@@ -276,9 +381,22 @@ const TraceDetail: React.FC<TraceDetailProps> = ({ trace, onBack, onAction }) =>
         {isFlagged && event && catStyle && (
           <div className="col-span-7 flex flex-col gap-4 overflow-y-auto pr-2 pb-6">
 
+             {/* Inter-Judge Agreement Panel (if cross-validation data available) */}
+             {crossValidationMeta && trace.conversationId && (
+               <AgreementPanel
+                 meta={crossValidationMeta}
+                 conversationId={trace.conversationId}
+                 onViewComparison={() => navigate(`/comparison/${trace.conversationId}`)}
+               />
+             )}
+
              {/* Detected Issues Panel */}
              {trace.patterns && trace.patterns.length > 0 ? (
-               <DetectedIssuesPanel patterns={trace.patterns} />
+               <DetectedIssuesPanel
+                 patterns={trace.patterns}
+                 judge1Name={crossValidationMeta?.judge_1_model}
+                 judge2Name={crossValidationMeta?.judge_2_model}
+               />
              ) : (
                /* Fallback: Generate mockup-style issue card from detection event */
                <div className="bg-slate-900/50 border border-slate-800 rounded-xl overflow-hidden">

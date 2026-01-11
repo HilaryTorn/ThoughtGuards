@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { LayoutDashboard, List, Settings, FileText } from 'lucide-react';
+import { LayoutDashboard, List, Settings, FileText, Zap } from 'lucide-react';
 import { AppView } from '../types';
 
 interface LeftNavProps {
@@ -13,6 +13,7 @@ const LeftNav: React.FC<LeftNavProps> = ({ currentView, onNavigate }) => {
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
     { id: 'traces', label: 'Traces', icon: List, path: '/traces' },
     { id: 'audit', label: 'Queue', icon: FileText, path: '/queue' },
+    { id: 'red-team-lab', label: 'Red Team Lab', icon: Zap, path: '/red-team-lab' },
     { id: 'settings', label: 'Settings', icon: Settings, path: '/settings' },
   ] as const;
 
@@ -49,18 +50,6 @@ const LeftNav: React.FC<LeftNavProps> = ({ currentView, onNavigate }) => {
         })}
       </nav>
 
-      {/* User / Footer */}
-      <div className="p-4 border-t border-slate-800">
-        <div className="flex items-center gap-3 px-2">
-          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-slate-700 to-slate-800 border border-slate-600 flex items-center justify-center text-xs font-bold text-slate-300">
-            AD
-          </div>
-          <div className="flex-1">
-            <p className="text-xs font-medium text-slate-200">Admin User</p>
-            <p className="text-[10px] text-slate-500">Security Ops</p>
-          </div>
-        </div>
-      </div>
     </div>
   );
 };

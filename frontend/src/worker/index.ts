@@ -20,6 +20,9 @@ import { reportCacheRoutes } from './routes/report-cache';
 import { resetDbRoutes } from './routes/reset-db';
 import { wmdpEvaluationsRoutes } from './routes/wmdp-evaluations';
 import { toolsRoutes } from './routes/tools';
+import redteamRoutes from './routes/redteam';
+import judgeComparisonRoutes from './routes/judge-comparison';
+import aiGenerateRoutes from './routes/ai-generate';
 
 // Define environment bindings
 export interface Env {
@@ -58,6 +61,9 @@ app.route('/api/report-cache', reportCacheRoutes);
 app.route('/api/reset-db', resetDbRoutes);
 app.route('/api/wmdp-evaluations', wmdpEvaluationsRoutes);
 app.route('/api/tools', toolsRoutes);
+app.route('/api/redteam', redteamRoutes);
+app.route('/api/judge-comparison', judgeComparisonRoutes);
+app.route('/api/ai', aiGenerateRoutes);
 
 // Health check endpoint
 app.get('/api/health', (c) => {

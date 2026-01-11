@@ -11,6 +11,8 @@ import Settings from './components/Settings';
 import AuditView from './components/AuditView';
 import DynamicDashboard from './components/DynamicDashboard';
 import Landing from './components/Landing';
+import RedTeamLab from './components/RedTeamLab';
+import JudgeComparisonView from './components/JudgeComparisonView';
 import { AuditResult } from './lib/types';
 import { CATEGORY_TO_SKILL, AVAILABLE_SKILLS } from './lib/skillsRegistry';
 
@@ -84,6 +86,8 @@ const App: React.FC = () => {
                 chatbotMode: trace.detectionMetadata?.chatbot_mode,
                 chatbotModel: trace.modelName,
                 label: isSuspicious ? 'adversarial' : 'clean',
+                patterns: trace.patterns,
+                crossValidation: trace.crossValidation,
               };
             });
             setTraces(loadedTraces);
@@ -105,12 +109,14 @@ const App: React.FC = () => {
   const location = useLocation();
 
   // Derive current view from URL path
-  const getCurrentView = (): AppView => {
+  const getCurrentView = (): AppView | 'comparison' => {
     const path = location.pathname;
     if (path === '/') return 'landing';
     if (path === '/dashboard') return 'dashboard';
     if (path.startsWith('/traces')) return 'traces';
     if (path === '/queue') return 'audit';
+    if (path === '/red-team-lab') return 'red-team-lab';
+    if (path.startsWith('/comparison')) return 'comparison';
     if (path.startsWith('/settings')) return 'settings';
     return 'dashboard';
   };
@@ -125,8 +131,19 @@ const App: React.FC = () => {
     Object.keys(CATEGORY_STYLES) as DetectionCategory[]
   );
 
-  // Settings State
+  // Settings State - load from localStorage if available
   const [settings, setSettings] = useState<AppSettings>(() => {
+    // Try to load from localStorage first
+    const savedSettings = localStorage.getItem('thoughtguards_settings');
+    if (savedSettings) {
+      try {
+        return JSON.parse(savedSettings);
+      } catch (e) {
+        console.warn('Failed to parse saved settings:', e);
+      }
+    }
+
+    // Default settings
     const initialCategories = Object.keys(CATEGORY_STYLES).reduce((acc, key) => ({...acc, [key]: true}), {} as any);
     const initialActiveSkills = Object.keys(CATEGORY_TO_SKILL).reduce((acc, key) => ({
       ...acc,
@@ -146,6 +163,9 @@ const App: React.FC = () => {
       multiRunCount: 1, // Default to single-run (no statistical analysis)
       multiRunTemperature: undefined, // Optional temperature for variation
       multiRunSeed: undefined, // Optional seed for reproducibility
+      // Cross-validation settings
+      enableCrossValidation: false,
+      secondaryJudgeModel: undefined, // No Judge B by default
     };
   });
 
@@ -173,6 +193,7 @@ const App: React.FC = () => {
       'dashboard': '/dashboard',
       'traces': '/traces',
       'audit': '/queue',
+      'red-team-lab': '/red-team-lab',
       'settings': '/settings',
     };
     if (routeMap[view]) {
@@ -223,45 +244,9 @@ const App: React.FC = () => {
         break;
     }
 
-    // Update in database
-    try {
-      const trace = traces.find(t => t.id === traceId);
-      if (trace) {
-        // Fetch the audit result to get all fields, then update status
-        const response = await fetch(`/api/audit-reports?limit=1000`);
-        if (response.ok) {
-          const data = await response.json();
-          const auditResult = data.traces?.find((t: any) => t.id === traceId);
-          if (auditResult) {
-            // Update the status in the database
-            await fetch('/api/audit-reports', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                audit_id: auditResult.auditId,
-                trace_id: traceId,
-                conversation_id: auditResult.conversationId,
-                skill_id: auditResult.skillId,
-                model_name: auditResult.modelName,
-                overall_score: auditResult.overallScore,
-                confidence: auditResult.confidence,
-                status: newStatus,
-                risk_score: trace.riskScore,
-                detected_types: auditResult.detectedTypes,
-                metrics: auditResult.metrics,
-                recommendations: auditResult.recommendations,
-                limitations: auditResult.limitations,
-                usage: auditResult.usage,
-                detection_event: trace.detectionEvent,
-                conversation_data: trace.conversation,
-              }),
-            });
-          }
-        }
-      }
-    } catch (error) {
-      console.error('Error updating trace status:', error);
-    }
+    // Note: Status updates are UI-only for now
+    // The audit_reports table uses INSERT OR REPLACE which would overwrite the report
+    // A proper PATCH endpoint would be needed for status-only updates
 
     // Update global trace list state
     const updatedTraces = traces.map(t => t.id === traceId ? { ...t, status: newStatus } : t);
@@ -285,6 +270,8 @@ const App: React.FC = () => {
 
   const handleSettingsUpdate = (newSettings: AppSettings) => {
     setSettings(newSettings);
+    // Persist to localStorage
+    localStorage.setItem('thoughtguards_settings', JSON.stringify(newSettings));
   };
 
     // Render Logic
@@ -517,56 +504,8 @@ const App: React.FC = () => {
           patterns: result.patterns,
         };
 
-        // Save to database
-        try {
-          // First, ensure conversation exists (for FK constraint)
-          await fetch('/api/conversations', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              conversation_id: result.conversation_id,
-              customer_id: 'audit-customer',
-              label: testCase.label || 'Audit Test Case',
-            }),
-          });
-
-          const saveResponse = await fetch('/api/audit-reports', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              audit_id: result.id,
-              trace_id: traceId,
-              conversation_id: result.conversation_id,
-              skill_id: result.skill_id,
-              model_name: result.model_name,
-              overall_score: result.overall_score,
-              confidence: result.confidence,
-              status: finalStatus,
-              risk_score: finalRiskScore,
-              detected_types: result.detected_types,
-              metrics: result.metrics,
-              recommendations: result.recommendations,
-              limitations: result.limitations,
-              usage: result.usage,
-              detection_event: detectionEvent,
-              conversation_data: conversation,
-              // Multi-skill fields
-              skill_results: result.skill_results,
-              combined_score: result.combined_score,
-              primary_category: result.primary_category,
-              secondary_categories: result.secondary_categories,
-              detection_metadata: result.detection_metadata,
-              // Taxonomy patterns
-              patterns: result.patterns,
-            }),
-          });
-
-          if (!saveResponse.ok) {
-            console.error('Failed to save audit result to database');
-          }
-        } catch (error) {
-          console.error('Error saving audit result:', error);
-        }
+        // Note: AuditView.tsx already saves the audit report to the database
+        // We only need to update the local traces state here
 
         // Add to traces (avoid duplicates)
         setTraces(prev => {
@@ -590,14 +529,25 @@ const App: React.FC = () => {
     if (currentView === 'traces') {
       if (selectedTrace) {
         return (
-          <TraceDetail 
-            trace={selectedTrace} 
-            onBack={handleBackToTraceList} 
+          <TraceDetail
+            trace={selectedTrace}
+            onBack={handleBackToTraceList}
             onAction={handleTraceAction}
           />
         );
       }
       return <TraceList traces={traces} onSelectTrace={handleSelectTraceFromList} />;
+    }
+
+    if (currentView === 'red-team-lab') {
+      return <RedTeamLab onNavigateToQueue={() => handleNavigate('audit')} />;
+    }
+
+    if (currentView === 'comparison') {
+      // Extract conversation ID from URL: /comparison/:conversationId
+      const match = location.pathname.match(/^\/comparison\/(.+)$/);
+      const conversationId = match?.[1] || undefined;
+      return <JudgeComparisonView conversationId={conversationId} />;
     }
 
     // Default: Dashboard View
@@ -610,6 +560,7 @@ const App: React.FC = () => {
     if (currentView === 'dashboard') return 'Live Monitoring Dashboard';
     if (currentView === 'traces') return selectedTrace ? `Investigation: ${selectedTrace.id}` : 'Trace History';
     if (currentView === 'audit') return 'Detection Queue';
+    if (currentView === 'red-team-lab') return 'Red Team Lab';
     if (currentView === 'settings') return 'System Settings';
     return '';
   };
@@ -667,7 +618,7 @@ const App: React.FC = () => {
         </header>
 
         {/* Page Content */}
-        <main className="max-w-7xl mx-auto px-6 py-8">
+        <main className={`${currentView === 'red-team-lab' ? '' : 'max-w-7xl mx-auto px-6 py-8'}`}>
           {renderContent()}
         </main>
 

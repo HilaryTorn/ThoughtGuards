@@ -1,12 +1,71 @@
 import { GoogleGenAI, GenerateContentParameters, GenerateContentResponse, Type } from "@google/genai";
+import Anthropic from "@anthropic-ai/sdk";
 
 /**
  * AI service "Factory Proxy" to centralize all LLM interactions.
- * Handles token tracking, cost calculation, and strictly uses process.env.API_KEY.
+ * Supports multiple providers: Gemini (Google) and Anthropic (Claude).
+ * Handles token tracking, cost calculation, and API key management.
+ *
+ * In production (no localStorage keys), routes through server-side API.
+ * In development (with localStorage keys), calls APIs directly.
  */
+
+/**
+ * Check if we should use server-side API (production without BYOK keys)
+ */
+function shouldUseServerSideAPI(): boolean {
+  if (typeof window === 'undefined') return false;
+
+  // Check if user has provided their own keys
+  const hasGeminiKey = !!(localStorage.getItem('BYOK_API_KEY') || localStorage.getItem('GEMINI_API_KEY'));
+  const hasAnthropicKey = !!localStorage.getItem('ANTHROPIC_API_KEY');
+
+  // If no keys are set, use server-side API
+  return !hasGeminiKey && !hasAnthropicKey;
+}
+
+export type AIProvider = 'gemini' | 'anthropic';
 
 type UsageCallback = (usage: TokenUsage, model: string) => void;
 type RequestLogCallback = (log: RequestLog) => void;
+
+/**
+ * Detect provider from model name.
+ */
+export function getProviderFromModel(model: string): AIProvider {
+  console.log(`[getProviderFromModel] Input model: "${model}", type: ${typeof model}`);
+  const isClaudeModel = model && typeof model === 'string' && model.startsWith('claude-');
+  const provider = isClaudeModel ? 'anthropic' : 'gemini';
+  console.log(`[getProviderFromModel] Result: ${provider} (isClaudeModel: ${isClaudeModel})`);
+  return provider;
+}
+
+/**
+ * Parameters for Anthropic content generation.
+ */
+export interface AnthropicGenerateParams {
+  model: string;
+  messages: Array<{ role: 'user' | 'assistant'; content: string }>;
+  system?: string;
+  max_tokens?: number;
+  temperature?: number;
+  top_p?: number;
+}
+
+/**
+ * Unified response format for both providers.
+ */
+export interface UnifiedAIResponse {
+  text: string;
+  provider: AIProvider;
+  model: string;
+  usage?: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+  };
+  rawResponse?: any;
+}
 
 export interface TokenUsage {
   prompt_tokens: number;
@@ -68,9 +127,9 @@ class AIService {
   }
 
   /**
-   * Get the active API key, checking BYOK first, then environment variable.
+   * Get the Gemini API key, checking BYOK first, then environment variable.
    */
-  private static getApiKey(): string {
+  private static getGeminiApiKey(): string {
     // Check for BYOK (Bring Your Own Key) in localStorage first
     if (typeof window !== 'undefined') {
       const byokKey = localStorage.getItem('BYOK_API_KEY') || localStorage.getItem('GEMINI_API_KEY');
@@ -83,10 +142,42 @@ class AIService {
   }
 
   /**
+   * Get the Anthropic API key, checking localStorage first, then environment variable.
+   */
+  private static getAnthropicApiKey(): string {
+    if (typeof window !== 'undefined') {
+      const key = localStorage.getItem('ANTHROPIC_API_KEY');
+      if (key && key.trim().length > 0) {
+        return key.trim();
+      }
+    }
+    return process.env.ANTHROPIC_API_KEY || '';
+  }
+
+  /**
+   * Legacy method for backward compatibility.
+   */
+  private static getApiKey(): string {
+    return this.getGeminiApiKey();
+  }
+
+  /**
    * Centralized content generation.
-   * Creates a fresh GoogleGenAI instance right before making an API call to ensure it always uses the most up-to-date API key.
+   * Uses server-side API in production (no BYOK keys), or direct API calls with BYOK keys.
    */
   public static async generateContent(params: GenerateContentParameters & { model: string }): Promise<GenerateContentResponse> {
+    // Safeguard: Prevent Claude models from being sent to Gemini API
+    if (params.model.startsWith('claude-')) {
+      console.error(`[AIService.generateContent] ERROR: Claude model "${params.model}" was passed to Gemini API!`);
+      console.error('[AIService.generateContent] This is a bug - Claude models should use generateWithAnthropic()');
+      throw new Error(`Claude model "${params.model}" cannot be used with Gemini API. Use generateWithAnthropic() instead.`);
+    }
+
+    // Use server-side API if no BYOK keys are configured
+    if (shouldUseServerSideAPI()) {
+      return this.generateContentViaServer(params);
+    }
+
     const apiKey = this.getApiKey();
     const ai = new GoogleGenAI({ apiKey });
     const startTime = Date.now();
@@ -211,7 +302,84 @@ class AIService {
   }
 
   /**
-   * Streamed content generation.
+   * Generate content via server-side API (for production without BYOK keys).
+   */
+  private static async generateContentViaServer(params: GenerateContentParameters & { model: string }): Promise<GenerateContentResponse> {
+    const startTime = Date.now();
+    const logId = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+
+    const requestLog: RequestLog = {
+      id: logId,
+      timestamp: new Date().toISOString(),
+      model: params.model,
+      request: {
+        contents: typeof params.contents === 'string' ? params.contents : JSON.stringify(params.contents, null, 2),
+        config: params.config
+      }
+    };
+
+    try {
+      const response = await fetch('/api/ai/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider: 'gemini',
+          model: params.model,
+          contents: params.contents,
+          config: params.config,
+        }),
+      });
+
+      const data = await response.json() as {
+        success: boolean;
+        error?: string;
+        text?: string;
+        candidates?: any[];
+        usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number; totalTokenCount?: number };
+      };
+      const duration = Date.now() - startTime;
+
+      if (!data.success) {
+        throw new Error(data.error || 'Server-side AI generation failed');
+      }
+
+      // Build a response object compatible with GenerateContentResponse
+      const result: GenerateContentResponse = {
+        text: data.text,
+        candidates: data.candidates,
+        usageMetadata: data.usageMetadata,
+      } as GenerateContentResponse;
+
+      if (data.usageMetadata) {
+        this.notifyUsage({
+          prompt_tokens: data.usageMetadata.promptTokenCount || 0,
+          candidates_tokens: data.usageMetadata.candidatesTokenCount || 0,
+          total_tokens: data.usageMetadata.totalTokenCount || 0,
+        }, params.model);
+
+        requestLog.usage = {
+          prompt_tokens: data.usageMetadata.promptTokenCount || 0,
+          candidates_tokens: data.usageMetadata.candidatesTokenCount || 0,
+          total_tokens: data.usageMetadata.totalTokenCount || 0,
+        };
+      }
+
+      requestLog.response = { text: data.text, fullResponse: data };
+      requestLog.duration = duration;
+      this.notifyRequestLog(requestLog);
+
+      return result;
+    } catch (error: any) {
+      const duration = Date.now() - startTime;
+      requestLog.error = error.message || String(error);
+      requestLog.duration = duration;
+      this.notifyRequestLog(requestLog);
+      throw error;
+    }
+  }
+
+  /**
+   * Streamed content generation (Gemini only).
    */
   public static async *generateContentStream(params: GenerateContentParameters & { model: string }) {
     const apiKey = this.getApiKey();
@@ -233,6 +401,247 @@ class AIService {
       }
       yield chunk;
     }
+  }
+
+  /**
+   * Generate content using Anthropic Claude models.
+   * Uses server-side API in production (no BYOK keys), or direct API calls with BYOK keys.
+   */
+  public static async generateWithAnthropic(params: AnthropicGenerateParams): Promise<UnifiedAIResponse> {
+    // Use server-side API if no BYOK keys are configured
+    if (shouldUseServerSideAPI()) {
+      return this.generateWithAnthropicViaServer(params);
+    }
+
+    const apiKey = this.getAnthropicApiKey();
+    if (!apiKey) {
+      throw new Error('ANTHROPIC_API_KEY not configured. Please add it in Settings.');
+    }
+
+    const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
+    const startTime = Date.now();
+    const logId = typeof crypto !== 'undefined' && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+    // Prepare request log
+    const requestLog: RequestLog = {
+      id: logId,
+      timestamp: new Date().toISOString(),
+      model: params.model,
+      request: {
+        contents: JSON.stringify(params.messages, null, 2),
+        config: { system: params.system, max_tokens: params.max_tokens, temperature: params.temperature }
+      }
+    };
+
+    try {
+      const response = await client.messages.create({
+        model: params.model,
+        max_tokens: params.max_tokens || 4096,
+        system: params.system,
+        messages: params.messages,
+        temperature: params.temperature,
+        top_p: params.top_p,
+      });
+
+      const duration = Date.now() - startTime;
+
+      // Extract text from response
+      let text = '';
+      for (const block of response.content) {
+        if (block.type === 'text') {
+          text += block.text;
+        }
+      }
+
+      // Track usage
+      const usage = {
+        prompt_tokens: response.usage.input_tokens,
+        completion_tokens: response.usage.output_tokens,
+        total_tokens: response.usage.input_tokens + response.usage.output_tokens,
+      };
+
+      this.notifyUsage({
+        prompt_tokens: usage.prompt_tokens,
+        candidates_tokens: usage.completion_tokens,
+        total_tokens: usage.total_tokens,
+      }, params.model);
+
+      requestLog.usage = {
+        prompt_tokens: usage.prompt_tokens,
+        candidates_tokens: usage.completion_tokens,
+        total_tokens: usage.total_tokens,
+      };
+      requestLog.response = { text, fullResponse: response };
+      requestLog.duration = duration;
+      this.notifyRequestLog(requestLog);
+
+      return {
+        text,
+        provider: 'anthropic',
+        model: params.model,
+        usage,
+        rawResponse: response,
+      };
+    } catch (error: any) {
+      const duration = Date.now() - startTime;
+
+      let errorMessage = error?.message || String(error);
+      if (error?.status) {
+        errorMessage = `${error.status}: ${errorMessage}`;
+      }
+
+      // Enhanced error logging for Anthropic API errors
+      console.error(`[Anthropic API Error] Model: ${params.model}, Status: ${error?.status || 'unknown'}`);
+      console.error(`[Anthropic API Error] Message: ${errorMessage}`);
+      if (error?.error) {
+        console.error(`[Anthropic API Error] Details:`, error.error);
+      }
+
+      requestLog.error = errorMessage;
+      requestLog.duration = duration;
+      this.notifyRequestLog(requestLog);
+
+      throw error;
+    }
+  }
+
+  /**
+   * Generate content via server-side Anthropic API (for production without BYOK keys).
+   */
+  private static async generateWithAnthropicViaServer(params: AnthropicGenerateParams): Promise<UnifiedAIResponse> {
+    const startTime = Date.now();
+    const logId = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+
+    const requestLog: RequestLog = {
+      id: logId,
+      timestamp: new Date().toISOString(),
+      model: params.model,
+      request: {
+        contents: JSON.stringify(params.messages, null, 2),
+        config: { system: params.system, max_tokens: params.max_tokens, temperature: params.temperature }
+      }
+    };
+
+    try {
+      const response = await fetch('/api/ai/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider: 'anthropic',
+          model: params.model,
+          messages: params.messages,
+          system: params.system,
+          max_tokens: params.max_tokens || 4096,
+          temperature: params.temperature,
+        }),
+      });
+
+      const data = await response.json() as {
+        success: boolean;
+        error?: string;
+        text?: string;
+        usage?: { input_tokens?: number; output_tokens?: number };
+      };
+      const duration = Date.now() - startTime;
+
+      if (!data.success) {
+        throw new Error(data.error || 'Server-side Anthropic API call failed');
+      }
+
+      const usage = {
+        prompt_tokens: data.usage?.input_tokens || 0,
+        completion_tokens: data.usage?.output_tokens || 0,
+        total_tokens: (data.usage?.input_tokens || 0) + (data.usage?.output_tokens || 0),
+      };
+
+      this.notifyUsage({
+        prompt_tokens: usage.prompt_tokens,
+        candidates_tokens: usage.completion_tokens,
+        total_tokens: usage.total_tokens,
+      }, params.model);
+
+      requestLog.usage = {
+        prompt_tokens: usage.prompt_tokens,
+        candidates_tokens: usage.completion_tokens,
+        total_tokens: usage.total_tokens,
+      };
+      requestLog.response = { text: data.text, fullResponse: data };
+      requestLog.duration = duration;
+      this.notifyRequestLog(requestLog);
+
+      return {
+        text: data.text || '',
+        provider: 'anthropic',
+        model: params.model,
+        usage,
+        rawResponse: data,
+      };
+    } catch (error: any) {
+      const duration = Date.now() - startTime;
+      requestLog.error = error.message || String(error);
+      requestLog.duration = duration;
+      this.notifyRequestLog(requestLog);
+      throw error;
+    }
+  }
+
+  /**
+   * Unified content generation that auto-detects provider from model name.
+   * Use this for provider-agnostic code.
+   */
+  public static async generateUnified(params: {
+    model: string;
+    prompt: string;
+    systemPrompt?: string;
+    maxTokens?: number;
+    temperature?: number;
+    topP?: number;
+    responseFormat?: 'text' | 'json';
+  }): Promise<UnifiedAIResponse> {
+    const provider = getProviderFromModel(params.model);
+
+    if (provider === 'anthropic') {
+      return this.generateWithAnthropic({
+        model: params.model,
+        messages: [{ role: 'user', content: params.prompt }],
+        system: params.systemPrompt,
+        max_tokens: params.maxTokens || 4096,
+        temperature: params.temperature,
+        top_p: params.topP,
+      });
+    }
+
+    // Gemini
+    const response = await this.generateContent({
+      model: params.model,
+      contents: params.prompt,
+      config: {
+        systemInstruction: params.systemPrompt,
+        maxOutputTokens: params.maxTokens,
+        temperature: params.temperature,
+        topP: params.topP,
+        responseMimeType: params.responseFormat === 'json' ? 'application/json' : undefined,
+      }
+    });
+
+    let text = response.text || '';
+    if (!text && (response as any).candidates?.[0]?.content?.parts?.[0]?.text) {
+      text = (response as any).candidates[0].content.parts[0].text;
+    }
+
+    return {
+      text,
+      provider: 'gemini',
+      model: params.model,
+      usage: response.usageMetadata ? {
+        prompt_tokens: response.usageMetadata.promptTokenCount || 0,
+        completion_tokens: response.usageMetadata.candidatesTokenCount || 0,
+        total_tokens: response.usageMetadata.totalTokenCount || 0,
+      } : undefined,
+      rawResponse: response,
+    };
   }
 }
 
