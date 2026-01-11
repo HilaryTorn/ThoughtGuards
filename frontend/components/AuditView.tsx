@@ -611,16 +611,22 @@ const AuditView: React.FC<AuditViewProps> = ({ onResult, settings }) => {
     };
   }, [testCasesWithStatus]);
 
-  const getScoreColor = (score: number) => {
-    if (score >= 0.7) return 'text-red-400';
-    if (score >= 0.4) return 'text-orange-400';
-    return 'text-green-400';
+  // Calculate max severity from detected_types (score is 0-1, convert to 1-5 scale)
+  const getMaxSeverity = (result: AuditResult): number => {
+    const detected = result.detected_types;
+    if (!detected || !Array.isArray(detected) || detected.length === 0) return 0;
+    const maxScore = detected.reduce((max, d) => Math.max(max, d.score ?? 0), 0);
+    return Math.ceil(maxScore * 5);
   };
 
-  const getScoreBg = (score: number) => {
-    if (score >= 0.7) return 'bg-red-500/10 border-red-500/50';
-    if (score >= 0.4) return 'bg-orange-500/10 border-orange-500/50';
-    return 'bg-green-500/10 border-green-500/50';
+  // Severity style mapping (matches TraceDetail)
+  const getSeverityStyle = (severity: number) => {
+    if (severity >= 5) return { badge: 'bg-red-500/15 text-red-400 border-red-500/30', label: 'Critical' };
+    if (severity >= 4) return { badge: 'bg-orange-500/15 text-orange-400 border-orange-500/30', label: 'High' };
+    if (severity >= 3) return { badge: 'bg-amber-500/15 text-amber-400 border-amber-500/30', label: 'Medium' };
+    if (severity >= 2) return { badge: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30', label: 'Low' };
+    if (severity >= 1) return { badge: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30', label: 'Minimal' };
+    return { badge: 'bg-slate-500/15 text-slate-400 border-slate-500/30', label: 'None' };
   };
 
   const getStatusBadge = (status: TestCaseStatus) => {
@@ -876,11 +882,15 @@ const AuditView: React.FC<AuditViewProps> = ({ onResult, settings }) => {
                       <span className={`px-2 py-0.5 rounded text-xs font-medium border ${getStatusBadge(testCase.status)}`}>
                         {testCase.status}
                       </span>
-                      {hasResult && (
-                        <span className={`px-2 py-0.5 rounded text-xs font-bold border ${getScoreBg(testCase.result!.overall_score)} ${getScoreColor(testCase.result!.overall_score)}`}>
-                          {(testCase.result!.overall_score * 100).toFixed(0)}%
-                        </span>
-                      )}
+                      {hasResult && (() => {
+                        const severity = getMaxSeverity(testCase.result!);
+                        const style = getSeverityStyle(severity);
+                        return (
+                          <span className={`px-2 py-0.5 rounded text-xs font-bold border ${style.badge}`}>
+                            {severity > 0 ? `${style.label} (${severity}/5)` : 'Clean'}
+                          </span>
+                        );
+                      })()}
                     </div>
                     <div className="flex items-center gap-2 mb-2">
                       <p className="text-xs text-slate-400">{testCase.category} • {testCase.display_type}</p>

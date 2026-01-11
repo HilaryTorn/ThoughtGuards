@@ -145,7 +145,8 @@ const TraceList: React.FC<TraceListProps> = ({ traces, onSelectTrace }) => {
                       {renderStatus()}
                     </td>
                     <td className="p-3 text-center">
-                      {trace.crossValidation?._meta?.agreement_rate !== undefined ? (
+                      {trace.crossValidation?._meta?.agreement_rate !== undefined &&
+                       (trace.crossValidation._meta.judges_used?.length ?? 0) >= 2 ? (
                         <span className={`text-xs font-mono font-bold flex items-center justify-center gap-1 ${
                           trace.crossValidation._meta.agreement_rate >= 0.8 ? 'text-green-400' :
                           trace.crossValidation._meta.agreement_rate >= 0.5 ? 'text-yellow-400' : 'text-orange-400'

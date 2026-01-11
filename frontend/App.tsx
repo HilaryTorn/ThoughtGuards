@@ -82,7 +82,13 @@ const App: React.FC = () => {
                     heuristic: 0.8,
                   },
                 } : undefined,
-                conversation: conversationTurns,
+                conversation: conversationTurns.map((turn: any) => ({
+                  role: turn.role === 'customer' ? 'user' : turn.role,
+                  content: turn.content,
+                  timestamp: turn.timestamp,
+                  reasoning_trace: turn.reasoning_content || turn.reasoning_trace || undefined,
+                  tool_calls: turn.tool_calls || undefined,
+                })),
                 conversationId: trace.conversationId || trace.conversation?.conversation_id,
                 chatbotMode: trace.detectionMetadata?.chatbot_mode,
                 chatbotModel: trace.modelName,
@@ -548,9 +554,9 @@ const App: React.FC = () => {
         });
 
         // Show toast notification
-        setToast({ 
-          message: `Audit completed: ${riskScore}% risk score`, 
-          type: status === 'flagged' ? 'alert' : status === 'review' ? 'info' : 'success' 
+        setToast({
+          message: 'Audit complete',
+          type: status === 'flagged' ? 'alert' : status === 'review' ? 'info' : 'success'
         });
       }} />
         </>
