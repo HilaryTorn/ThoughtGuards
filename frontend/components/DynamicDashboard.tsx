@@ -117,7 +117,7 @@ const DynamicDashboard: React.FC<DynamicDashboardProps> = ({ settings, onViewTra
               snippet: evidence.snippet || primaryDetection?.type || t.skillId || 'Audit result',
               fullCoT,
               conversationHistory,
-              matchedPatterns: t.detectedTypes?.map((d: any) => d.type) || [],
+              matchedPatterns: (t.detectedTypes?.map((d: any) => d.type) || []).filter((t: any) => t && t !== 'none'),
               confidence: {
                 model: t.overallScore || 0,
                 heuristic: 0.8

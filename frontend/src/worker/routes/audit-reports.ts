@@ -145,8 +145,8 @@ auditReportsRoutes.get('/', async (c) => {
         id: row.report_id,
         timestamp: row.created_at ? new Date(row.created_at).toLocaleTimeString() : 'N/A',
         messageCount: 0,
-        status: getStatus(row.patterns, row.detection_metadata),
-        riskScore: row.overall_score * 100 || 0,
+        status: maxSeverity > 0 ? 'flagged' : 'clean',
+        riskScore: maxSeverity * 20, // Convert 1-5 severity to 0-100 scale
         maxSeverity,
         detectionEvent: maxSeverity > 0 ? {
           category: row.primary_category || 'Unknown',

@@ -47,8 +47,9 @@ const App: React.FC = () => {
           if (Array.isArray(auditTraces)) {
             // Convert audit reports to Trace format for the UI
             const loadedTraces: Trace[] = auditTraces.map((trace: any) => {
-              const riskScore = Math.round((trace.overallScore || 0) * 100);
-              const isSuspicious = trace.overallScore >= 0.5;
+              const maxSeverity = trace.maxSeverity ?? 0;
+              const hasPatterns = (trace.patterns?.length ?? 0) > 0;
+              const isSuspicious = maxSeverity > 0 || hasPatterns; // Flagged if LLM found issues
               const primaryDetection = trace.detectedTypes?.[0];
 
               // conversation can be an object {conversation_id, turns} or an array
@@ -61,11 +62,11 @@ const App: React.FC = () => {
                 timestamp: trace.createdAt || trace.timestamp,
                 messageCount: conversationTurns.length || 0,
                 status: isSuspicious ? 'flagged' as TraceStatus : 'clean' as TraceStatus,
-                riskScore,
+                riskScore: maxSeverity * 20, // Convert 1-5 severity to 0-100 scale
                 detectionEvent: isSuspicious ? {
                   id: trace.auditId || trace.id,
                   category: (trace.primaryCategory || 'Fabricated') as DetectionCategory,
-                  riskScore,
+                  riskScore: maxSeverity * 20,
                   timestamp: trace.createdAt || new Date().toISOString(),
                   snippet: primaryDetection?.evidence?.[0]?.snippet || trace.skillId || 'Audit detection',
                   fullCoT: conversationTurns.find((m: any) => m.reasoning_content || m.reasoning_trace)?.reasoning_content ||
@@ -75,7 +76,7 @@ const App: React.FC = () => {
                     content: msg.content,
                     timestamp: msg.timestamp,
                   })) as Message[],
-                  matchedPatterns: trace.detectedTypes?.map((d: any) => d.type) || [],
+                  matchedPatterns: (trace.detectedTypes?.map((d: any) => d.type) || []).filter((t: any) => t && t !== 'none'),
                   confidence: {
                     model: trace.overallScore || 0,
                     heuristic: 0.8,

@@ -136,7 +136,7 @@ const DetectionCard: React.FC<DetectionCardProps> = ({ event, onViewTrace }) => 
 
                  <div className="space-y-3">
                    {/* Show top patterns (up to 4) */}
-                   {event.matchedPatterns.slice(0, 4).map((pattern, idx) => {
+                   {event.matchedPatterns.filter(p => p && p !== 'none').slice(0, 4).map((pattern, idx) => {
                      const match = pattern.match(/^(T[1-4])\|(H[1-6])\|(W[1-4])$/);
                      if (match) {
                        const [, targetCode, howCode, whyCode] = match as [string, TARGETCode, HOWCode, WHYCode];
