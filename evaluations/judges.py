@@ -10,6 +10,7 @@ from datetime import datetime
 from typing import Dict, Any
 import anthropic
 from openai import OpenAI
+import google.generativeai as genai
 
 # Handle both direct execution and module import
 try:
@@ -17,7 +18,9 @@ try:
         ANTHROPIC_API_KEY,
         LITELLM_BASE_URL,
         LITELLM_API_KEY,
+        GOOGLE_API_KEY,
         AVAILABLE_JUDGES,
+        JUDGE_TEMPERATURE,
     )
     from .prompts import JUDGE_SYSTEM_PROMPT, build_analysis_prompt
     from .formatters import format_conversation_for_judge
@@ -27,7 +30,9 @@ except ImportError:
         ANTHROPIC_API_KEY,
         LITELLM_BASE_URL,
         LITELLM_API_KEY,
+        GOOGLE_API_KEY,
         AVAILABLE_JUDGES,
+        JUDGE_TEMPERATURE,
     )
     from prompts import JUDGE_SYSTEM_PROMPT, build_analysis_prompt
     from formatters import format_conversation_for_judge
@@ -35,6 +40,13 @@ except ImportError:
 # Initialize clients
 anthropic_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY) if ANTHROPIC_API_KEY else None
 litellm_client = OpenAI(base_url=LITELLM_BASE_URL, api_key=LITELLM_API_KEY) if LITELLM_API_KEY else None
+
+# Initialize Google Gemini client
+if GOOGLE_API_KEY:
+    genai.configure(api_key=GOOGLE_API_KEY)
+    google_client = genai
+else:
+    google_client = None
 
 
 async def judge_with_anthropic(conversation: Dict[str, Any], model: str, judge_id: str) -> Dict[str, Any]:
@@ -59,11 +71,11 @@ async def judge_with_anthropic(conversation: Dict[str, Any], model: str, judge_i
         response = anthropic_client.messages.create(
             model=model,
             max_tokens=4096,
+            temperature=JUDGE_TEMPERATURE,
             system=JUDGE_SYSTEM_PROMPT,
             messages=[
                 {"role": "user", "content": build_analysis_prompt(formatted)}
-            ],
-            temperature=0
+            ]
         )
 
         response_text = response.content[0].text
@@ -108,7 +120,7 @@ async def judge_with_litellm(conversation: Dict[str, Any], model: str, judge_id:
                 {"role": "system", "content": JUDGE_SYSTEM_PROMPT},
                 {"role": "user", "content": build_analysis_prompt(formatted)}
             ],
-            temperature=0,
+            temperature=JUDGE_TEMPERATURE,
         )
 
         response_text = response.choices[0].message.content
@@ -121,6 +133,60 @@ async def judge_with_litellm(conversation: Dict[str, Any], model: str, judge_id:
         result_data["_model"] = model
         result_data["_judge_id"] = judge_id
         result_data["_provider"] = "litellm"
+
+        return result_data
+
+    except Exception as e:
+        print(f"  {judge_id} ({model}) judge error: {e}")
+        return _make_error_result(conversation_id, model, judge_id, str(e))
+
+
+async def judge_with_google(conversation: Dict[str, Any], model: str, judge_id: str) -> Dict[str, Any]:
+    """
+    Run judgment using Google Gemini API.
+
+    Args:
+        conversation: Conversation dict
+        model: Model name
+        judge_id: Judge identifier
+
+    Returns:
+        Judgment result dict
+    """
+    formatted = format_conversation_for_judge(conversation)
+    conversation_id = conversation.get("conversation_id", "unknown")
+
+    if not google_client:
+        return _make_error_result(conversation_id, model, judge_id, "Google API key not configured")
+
+    try:
+        # Create the model instance
+        gemini_model = google_client.GenerativeModel(
+            model_name=model,
+            generation_config={
+                "temperature": JUDGE_TEMPERATURE,
+                "max_output_tokens": 4096,
+                "response_mime_type": "application/json",
+            },
+            system_instruction=JUDGE_SYSTEM_PROMPT,
+        )
+
+        # Generate response
+        response = gemini_model.generate_content(
+            build_analysis_prompt(formatted)
+        )
+
+        response_text = response.text
+        result_data = _parse_json_response(response_text, conversation_id)
+
+        # Extract token usage
+        tokens = 0
+        if hasattr(response, 'usage_metadata'):
+            tokens = response.usage_metadata.total_token_count
+        result_data["_tokens_used"] = tokens
+        result_data["_model"] = model
+        result_data["_judge_id"] = judge_id
+        result_data["_provider"] = "google"
 
         return result_data
 
@@ -151,6 +217,8 @@ async def run_judge(conversation: Dict[str, Any], judge_id: str) -> Dict[str, An
         return await judge_with_anthropic(conversation, model, judge_id)
     elif provider == "litellm":
         return await judge_with_litellm(conversation, model, judge_id)
+    elif provider == "google":
+        return await judge_with_google(conversation, model, judge_id)
     else:
         raise ValueError(f"Unknown provider: {provider}")
 

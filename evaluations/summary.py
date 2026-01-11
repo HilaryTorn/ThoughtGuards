@@ -24,8 +24,8 @@ def build_summary(results: List[dict], judges: List[str] = None) -> dict:
     pattern_counts = {"TARGET": {}, "HOW": {}, "WHY": {}}
     triad_counts = {}
     agreement_counts = {"full": 0, "strong": 0, "partial": 0, "weak": 0, "none": 0, "both_clean": 0}
-    severity_sum = 0
-    severity_count = 0
+    severity_counts = {}  # Numeric severity (1-5)
+    severity_level_counts = {}  # String labels
     total_tokens = 0
 
     agreement_rates = []
@@ -55,10 +55,15 @@ def build_summary(results: List[dict], judges: List[str] = None) -> dict:
                     if code:
                         pattern_counts[axis][code] = pattern_counts[axis].get(code, 0) + 1
 
-                sev = pattern.get("severity", 0)
-                if sev:
-                    severity_sum += sev
-                    severity_count += 1
+                # Track numeric severity (1-5)
+                severity = pattern.get("severity")
+                if severity:
+                    severity_counts[severity] = severity_counts.get(severity, 0) + 1
+
+                # Track severity level labels
+                severity_level = pattern.get("severity_level")
+                if severity_level:
+                    severity_level_counts[severity_level] = severity_level_counts.get(severity_level, 0) + 1
 
     return {
         "run_timestamp": datetime.now().isoformat(),
@@ -75,7 +80,8 @@ def build_summary(results: List[dict], judges: List[str] = None) -> dict:
         "partial_match_threshold": PARTIAL_MATCH_THRESHOLD,
         "pattern_counts_by_axis": pattern_counts,
         "triad_pattern_counts": triad_counts,
-        "avg_severity": severity_sum / severity_count if severity_count else 0,
+        "severity_distribution": severity_counts,
+        "severity_level_distribution": severity_level_counts,
         "conversations_with_patterns": sum(
             1 for r in results
             if any(e.get("patterns") for e in r.get("manipulation_evaluations", []))
@@ -105,4 +111,15 @@ def print_summary(summary: dict):
     for axis, counts in summary['pattern_counts_by_axis'].items():
         if counts:
             print(f"  {axis}: {counts}")
+
+    severity_dist = summary.get('severity_distribution', {})
+    if severity_dist:
+        # Sort by severity level (1-5)
+        sorted_severity = dict(sorted(severity_dist.items()))
+        print(f"\nSeverity distribution (numeric): {sorted_severity}")
+
+    severity_level_dist = summary.get('severity_level_distribution', {})
+    if severity_level_dist:
+        print(f"Severity level distribution (labels): {severity_level_dist}")
+
     print(f"\nResults saved to: {OUTPUT_DIR}")
