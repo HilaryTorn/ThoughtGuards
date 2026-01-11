@@ -11,8 +11,15 @@ import {
   Info,
   ChevronDown,
   ChevronUp,
-  Flag
+  Flag,
+  Loader2
 } from 'lucide-react';
+import type { AppSettings } from '../types';
+
+interface RedTeamLabProps {
+  settings?: AppSettings;
+  onNavigateToQueue?: () => void;
+}
 
 interface ScenarioContext {
   customer_id: string;
@@ -138,8 +145,9 @@ const AGENT_MODES: AgentMode[] = [
   }
 ];
 
-export default function RedTeamLab() {
+export default function RedTeamLab({ settings }: RedTeamLabProps) {
   const navigate = useNavigate();
+  const [isRunningAnalysis, setIsRunningAnalysis] = useState(false);
   const [stage, setStage] = useState<'scenario' | 'agent' | 'chat'>('scenario');
   const [selectedScenario, setSelectedScenario] = useState<Scenario | null>(null);
   const [selectedAgent, setSelectedAgent] = useState<AgentMode | null>(null);
@@ -540,10 +548,54 @@ export default function RedTeamLab() {
               Session complete! Conversation saved to audit queue.
             </p>
             <button
-              onClick={() => navigate(`/queue?autorun=${conversationId}`)}
-              className="px-4 py-2 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg text-sm"
+              onClick={async () => {
+                // Build judges array from settings (defaults to open source models)
+                const primaryJudge = settings?.auditorModel || 'mistral';
+                const secondaryJudge = settings?.secondaryJudgeModel ?? 'compassj';
+                const judges = secondaryJudge ? [primaryJudge, secondaryJudge] : [primaryJudge];
+
+                setIsRunningAnalysis(true);
+
+                try {
+                  const res = await fetch('/api/evaluate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      conversation_id: conversationId,
+                      judges
+                    })
+                  });
+
+                  if (!res.ok) {
+                    const err = await res.json() as { error?: string };
+                    console.error('Evaluation failed:', err);
+                    alert(`Evaluation failed: ${err.error || 'Unknown error'}`);
+                    return;
+                  }
+
+                  const result = await res.json();
+                  console.log('Evaluation result:', result);
+
+                  // Navigate to trace view to see results
+                  navigate(`/trace/${conversationId}`);
+                } catch (error) {
+                  console.error('Evaluation error:', error);
+                  alert('Failed to run evaluation. Is the Python server running?');
+                } finally {
+                  setIsRunningAnalysis(false);
+                }
+              }}
+              disabled={isRunningAnalysis}
+              className="px-4 py-2 bg-cyan-500 hover:bg-cyan-600 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm flex items-center gap-2 mx-auto"
             >
-              Run Analysis
+              {isRunningAnalysis ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Analyzing...
+                </>
+              ) : (
+                'Run Analysis'
+              )}
             </button>
           </div>
         </div>

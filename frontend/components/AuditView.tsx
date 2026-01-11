@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Play, CheckCircle, AlertTriangle, Loader2, FileText, X, Search, Filter, Eye, PlayCircle, Pause, ChevronLeft, ChevronRight, Clock, Zap, CheckSquare, Square, Plus, BarChart3, List, ExternalLink } from 'lucide-react';
 import { EnrichedTestCase, AuditResult, Skill, Conversation } from '../lib/types';
-import { executeMultiSkillAuditWithCrossValidation } from '../lib/multiSkillExecutor';
+// executeMultiSkillAuditWithCrossValidation removed - now using Python evaluation server
 import { executeMultiRunAudit, RunConfig } from '../lib/multiRunExecutor';
 import { loadAllTestCases } from '../lib/loadTestCases';
 import { AppSettings } from '../types';
@@ -376,22 +376,64 @@ const AuditView: React.FC<AuditViewProps> = ({ onResult, settings }) => {
 
         result = multiRunResult;
       } else {
-        // Use single-run intelligent multi-skill execution (with optional cross-validation)
-        console.log('[AuditView] Settings for audit:', {
-          auditorModel: settings.auditorModel,
-          enableCrossValidation: settings.enableCrossValidation,
-          secondaryJudgeModel: settings.secondaryJudgeModel,
+        // Use Python evaluation server for single-run audits
+        // Build judges from settings (defaults to open source models)
+        const primaryJudge = settings.auditorModel || 'mistral';
+        const secondaryJudge = settings.secondaryJudgeModel ?? 'compassj';
+        const judges = secondaryJudge ? [primaryJudge, secondaryJudge] : [primaryJudge];
+
+        console.log('[AuditView] Calling Python evaluation server with judges:', judges);
+
+        const response = await fetch('/api/evaluate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            conversation_id: testCase.conversation_id,
+            judges
+          })
         });
-        result = await executeMultiSkillAuditWithCrossValidation(
-          testCase,
-          settings.auditorModel,
-          {
-            sensitivity: settings.sensitivity,
-            includeValidatorCoT: true, // Always include CoT
-            enableCrossValidation: settings.enableCrossValidation,
-            secondaryJudgeModel: settings.secondaryJudgeModel,
-          }
-        );
+
+        if (!response.ok) {
+          const err = await response.json() as { error?: string };
+          throw new Error(err.error || 'Evaluation failed');
+        }
+
+        const evalResult = await response.json() as {
+          report_id: string;
+          manipulation_evaluations?: Array<{ patterns?: any[] }>;
+          _meta?: {
+            judges_used?: string[];
+            agreement_rate?: number;
+            agreement_type?: string;
+            total_tokens?: number;
+          };
+        };
+
+        // Convert to AuditResult format expected by the UI
+        const patterns = evalResult.manipulation_evaluations?.[0]?.patterns || [];
+        const meta = evalResult._meta || {};
+
+        result = {
+          id: evalResult.report_id,
+          conversation_id: testCase.conversation_id,
+          timestamp: new Date().toISOString(),
+          skill_id: 'llm-judge',
+          model_name: meta.judges_used?.join('+') || 'unknown',
+          overall_score: meta.agreement_rate || 0,
+          confidence: meta.agreement_type === 'full' || meta.agreement_type === 'strong' ? 'high' : meta.agreement_type === 'partial' ? 'medium' : 'low',
+          detected_types: patterns.map((p: any) => ({
+            type: p.triad_pattern_id || 'unknown',
+            score: p.confidence || 0,
+            evidence: (p.quotes || []).map((q: any) => ({ snippet: q.text || q, source: q.source || 'reasoning_trace' })),
+          })),
+          metrics: {
+            skill_count: judges.length,
+            primary_score: meta.agreement_rate || 0,
+          },
+          recommendations: [],
+          limitations: [],
+          usage: { prompt_tokens: 0, candidates_tokens: meta.total_tokens || 0, total_tokens: meta.total_tokens || 0 },
+        };
       }
       
       setTestCasesWithStatus(prev => {

@@ -570,7 +570,7 @@ const App: React.FC = () => {
     }
 
     if (currentView === 'red-team-lab') {
-      return <RedTeamLab onNavigateToQueue={() => handleNavigate('audit')} />;
+      return <RedTeamLab settings={settings} onNavigateToQueue={() => handleNavigate('audit')} />;
     }
 
     if (currentView === 'comparison') {

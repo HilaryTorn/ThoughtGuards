@@ -23,6 +23,7 @@ import { toolsRoutes } from './routes/tools';
 import redteamRoutes from './routes/redteam';
 import judgeComparisonRoutes from './routes/judge-comparison';
 import aiGenerateRoutes from './routes/ai-generate';
+import evaluateRoutes from './routes/evaluate';
 
 // Define environment bindings
 export interface Env {
@@ -35,6 +36,7 @@ export interface Env {
   DEEPSEEK_API_KEY?: string;
   QWEN_API_KEY?: string;
   RESET_DB_TOKEN?: string;
+  PYTHON_EVAL_URL?: string;  // URL of Python evaluation server (e.g., http://localhost:8787)
 }
 
 // Create Hono app with bindings type
@@ -64,6 +66,7 @@ app.route('/api/tools', toolsRoutes);
 app.route('/api/redteam', redteamRoutes);
 app.route('/api/judge-comparison', judgeComparisonRoutes);
 app.route('/api/ai', aiGenerateRoutes);
+app.route('/api/evaluate', evaluateRoutes);
 
 // Health check endpoint
 app.get('/api/health', (c) => {
