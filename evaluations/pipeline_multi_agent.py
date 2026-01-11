@@ -112,7 +112,10 @@ async def run_multi_agent_pipeline(
         "specializations": ["H1", "H2", "H3", "H4", "H5", "H6"]
     }
 
-    summary_file = OUTPUT_DIR / f"multi_agent_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    # Build descriptive summary filename
+    shot_type = "zero_shot" if ZERO_SHOT else "few_shot"
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    summary_file = OUTPUT_DIR / f"summary_multi_agent_{shot_type}_{judge_id}_{timestamp}.json"
     with open(summary_file, 'w', encoding='utf-8') as f:
         json.dump(summary, f, indent=2)
 

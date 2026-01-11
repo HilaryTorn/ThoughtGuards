@@ -104,7 +104,11 @@ async def run_pipeline(
     # Build summary
     summary = build_summary(results, judges)
 
-    summary_file = OUTPUT_DIR / f"summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    # Build descriptive summary filename
+    shot_type = "zero_shot" if ZERO_SHOT else "few_shot"
+    judges_str = "_".join(judges)
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    summary_file = OUTPUT_DIR / f"summary_single_agent_{shot_type}_{judges_str}_{timestamp}.json"
     with open(summary_file, 'w', encoding='utf-8') as f:
         json.dump(summary, f, indent=2)
 
