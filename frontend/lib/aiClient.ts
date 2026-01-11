@@ -310,7 +310,7 @@ class AIService {
    */
   private static async generateContentViaServer(params: GenerateContentParameters & { model: string }): Promise<GenerateContentResponse> {
     const startTime = Date.now();
-    const logId = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+    const logId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
 
     const requestLog: RequestLog = {
       id: logId,
@@ -516,7 +516,7 @@ class AIService {
    */
   private static async generateWithAnthropicViaServer(params: AnthropicGenerateParams): Promise<UnifiedAIResponse> {
     const startTime = Date.now();
-    const logId = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+    const logId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
 
     const requestLog: RequestLog = {
       id: logId,

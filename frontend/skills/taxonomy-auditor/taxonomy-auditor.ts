@@ -301,7 +301,7 @@ function buildAuditResult(
     ...data,
     patterns: enrichedPatterns,
     primaryCategory,
-    id: crypto.randomUUID(),
+    id: (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`,
     conversation_id: conversation.conversation_id,
     timestamp: new Date().toISOString(),
     skill_id: "taxonomy-auditor",
@@ -510,7 +510,7 @@ async function auditWithGemini(
  */
 export async function auditTaxonomy(
   conversation: Conversation,
-  modelName: string = "gemini-3-flash-preview",
+  modelName: string = "gemini-2.0-flash",
   options?: AuditOptions
 ): Promise<AuditResult> {
   // Determine provider from model name or explicit option

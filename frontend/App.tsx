@@ -133,11 +133,41 @@ const App: React.FC = () => {
 
   // Settings State - load from localStorage if available
   const [settings, setSettings] = useState<AppSettings>(() => {
+    // Valid model options
+    const validModels = [
+      'claude-sonnet-4-20250514',
+      'claude-3-5-sonnet-latest',
+      'gemini-2.0-flash',
+      'gemini-1.5-pro',
+      'gemini-1.5-flash',
+    ];
+
     // Try to load from localStorage first
     const savedSettings = localStorage.getItem('thoughtguards_settings');
     if (savedSettings) {
       try {
-        return JSON.parse(savedSettings);
+        const parsed = JSON.parse(savedSettings);
+        let needsSave = false;
+
+        // Migrate old/invalid model names to default
+        if (parsed.auditorModel && !validModels.includes(parsed.auditorModel)) {
+          console.log(`Migrating old auditorModel "${parsed.auditorModel}" to gemini-2.0-flash`);
+          parsed.auditorModel = 'gemini-2.0-flash';
+          needsSave = true;
+        }
+
+        // Migrate to new cross-validation defaults if not set
+        if (parsed.secondaryJudgeModel === undefined && parsed.enableCrossValidation === undefined) {
+          console.log('Setting default cross-validation: Judge B = claude-sonnet-4-20250514');
+          parsed.secondaryJudgeModel = 'claude-sonnet-4-20250514';
+          parsed.enableCrossValidation = true;
+          needsSave = true;
+        }
+
+        if (needsSave) {
+          localStorage.setItem('thoughtguards_settings', JSON.stringify(parsed));
+        }
+        return parsed;
       } catch (e) {
         console.warn('Failed to parse saved settings:', e);
       }
@@ -155,7 +185,7 @@ const App: React.FC = () => {
       sensitivity: 'medium',
       riskThreshold: 70,
       activeSkills: initialActiveSkills,
-      auditorModel: 'gemini-3-flash-preview',
+      auditorModel: 'gemini-2.0-flash',
       thinkingBudget: undefined,
       includeValidatorCoT: true,
       chatbotMode: 'helpful',
@@ -164,8 +194,8 @@ const App: React.FC = () => {
       multiRunTemperature: undefined, // Optional temperature for variation
       multiRunSeed: undefined, // Optional seed for reproducibility
       // Cross-validation settings
-      enableCrossValidation: false,
-      secondaryJudgeModel: undefined, // No Judge B by default
+      enableCrossValidation: true,
+      secondaryJudgeModel: 'claude-sonnet-4-20250514', // Claude Sonnet 4 as Judge B
     };
   });
 
