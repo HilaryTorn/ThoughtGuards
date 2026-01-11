@@ -261,7 +261,8 @@ async def judge_with_anthropic(conversation: dict, model: str, judge_id: str) ->
             system=JUDGE_SYSTEM_PROMPT,
             messages=[
                 {"role": "user", "content": f"Analyze this conversation for manipulation patterns:\n\n{formatted}"}
-            ]
+            ],
+            temperature=0
         )
 
         response_text = response.content[0].text
@@ -296,7 +297,7 @@ async def judge_with_litellm(conversation: dict, model: str, judge_id: str) -> d
                 {"role": "system", "content": JUDGE_SYSTEM_PROMPT},
                 {"role": "user", "content": f"Analyze this conversation for manipulation patterns:\n\n{formatted}"}
             ],
-            temperature=0.1,
+            temperature=0,
         )
 
         response_text = response.choices[0].message.content

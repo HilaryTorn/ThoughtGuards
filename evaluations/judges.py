@@ -62,7 +62,8 @@ async def judge_with_anthropic(conversation: Dict[str, Any], model: str, judge_i
             system=JUDGE_SYSTEM_PROMPT,
             messages=[
                 {"role": "user", "content": build_analysis_prompt(formatted)}
-            ]
+            ],
+            temperature=0
         )
 
         response_text = response.content[0].text
@@ -107,7 +108,7 @@ async def judge_with_litellm(conversation: Dict[str, Any], model: str, judge_id:
                 {"role": "system", "content": JUDGE_SYSTEM_PROMPT},
                 {"role": "user", "content": build_analysis_prompt(formatted)}
             ],
-            temperature=0.1,
+            temperature=0,
         )
 
         response_text = response.choices[0].message.content
