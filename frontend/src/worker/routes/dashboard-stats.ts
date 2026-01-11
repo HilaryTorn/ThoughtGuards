@@ -17,6 +17,16 @@ const DEFAULT_CATEGORIES = [
   'Overclaimed'      // H6
 ];
 
+// Map HOW codes to category names
+const HOW_CODE_MAP: Record<string, string> = {
+  'H1': 'Fabricated',
+  'H2': 'Sandbagged',
+  'H3': 'Context-Switched',
+  'H4': 'Pressured',
+  'H5': 'Hid',
+  'H6': 'Overclaimed',
+};
+
 dashboardStatsRoutes.get('/', async (c) => {
   const db = c.env.DB;
 
@@ -27,21 +37,21 @@ dashboardStatsRoutes.get('/', async (c) => {
     ).first<{ count: number }>();
     const totalAnalyzed = auditsResult?.count || 0;
 
-    // Get total detections (audits with high score)
+    // Get total detections (audits with patterns that have severity > 0)
     const detectionsResult = await db.prepare(`
       SELECT COUNT(*) as count FROM audit_reports
-      WHERE overall_score >= 0.5
+      WHERE patterns IS NOT NULL
+        AND patterns != '[]'
+        AND json_array_length(patterns) > 0
     `).first<{ count: number }>();
     const totalDetections = detectionsResult?.count || 0;
 
-    // Get category stats with statistics
+    // Get category stats with statistics (using pattern existence for detection)
     const categoryStats = await db.prepare(`
       SELECT
         primary_category,
         COUNT(*) as count,
-        SUM(CASE WHEN overall_score >= 0.5 THEN 1 ELSE 0 END) as detections,
-        AVG(overall_score) as mean_score,
-        AVG(overall_score * overall_score) as mean_sq_score
+        SUM(CASE WHEN json_array_length(patterns) > 0 THEN 1 ELSE 0 END) as detections
       FROM audit_reports
       WHERE primary_category IS NOT NULL
       GROUP BY primary_category
@@ -63,23 +73,24 @@ dashboardStatsRoutes.get('/', async (c) => {
       };
     }
 
-    // Populate with actual data
+    // Populate with actual data, normalizing HOW codes to category names
     for (const row of (categoryStats.results || []) as any[]) {
-      const cat = row.primary_category;
+      let cat = row.primary_category;
       if (cat) {
-        const mean = row.mean_score || 0;
-        const meanSq = row.mean_sq_score || 0;
-        // Calculate standard deviation: sqrt(E[X^2] - E[X]^2)
-        const variance = Math.max(0, meanSq - mean * mean);
-        const stddev = Math.sqrt(variance);
+        // Normalize HOW codes (H1, H2, etc.) to category names
+        if (HOW_CODE_MAP[cat]) {
+          cat = HOW_CODE_MAP[cat];
+        }
 
+        // Accumulate counts if category already exists (handles both H3 and Context-Switched mapping to same)
+        const existing = byCategory[cat] || { count: 0, detections: 0, statistics: { mean: 0, stddev: 0, quantiles: { p5: 0, p50: 0, p95: 0 } } };
         byCategory[cat] = {
-          count: row.count || 0,
-          detections: row.detections || 0,
+          count: existing.count + (row.count || 0),
+          detections: existing.detections + (row.detections || 0),
           statistics: {
-            mean: mean,
-            stddev: stddev,
-            quantiles: { p5: mean * 0.5, p50: mean, p95: mean * 1.2 } // Approximations
+            mean: 0,
+            stddev: 0,
+            quantiles: { p5: 0, p50: 0, p95: 0 }
           }
         };
       }
@@ -91,7 +102,7 @@ dashboardStatsRoutes.get('/', async (c) => {
       SELECT
         DATE(created_at) as date,
         COUNT(*) as count,
-        SUM(CASE WHEN overall_score >= 0.5 THEN 1 ELSE 0 END) as detections
+        SUM(CASE WHEN json_array_length(patterns) > 0 THEN 1 ELSE 0 END) as detections
       FROM audit_reports
       WHERE created_at >= ?
       GROUP BY DATE(created_at)
@@ -109,9 +120,7 @@ dashboardStatsRoutes.get('/', async (c) => {
       SELECT
         model_name,
         COUNT(*) as total,
-        SUM(CASE WHEN overall_score >= 0.5 THEN 1 ELSE 0 END) as detections,
-        AVG(overall_score) as mean_score,
-        AVG(overall_score * overall_score) as mean_sq_score
+        SUM(CASE WHEN json_array_length(patterns) > 0 THEN 1 ELSE 0 END) as detections
       FROM audit_reports
       WHERE model_name IS NOT NULL
       GROUP BY model_name
@@ -120,39 +129,16 @@ dashboardStatsRoutes.get('/', async (c) => {
     const modelPerformance: Record<string, any> = {};
     for (const row of (modelStatsResult.results || []) as any[]) {
       if (row.model_name) {
-        const mean = row.mean_score || 0;
-        const meanSq = row.mean_sq_score || 0;
-        const variance = Math.max(0, meanSq - mean * mean);
         modelPerformance[row.model_name] = {
           total: row.total || 0,
-          detections: row.detections || 0,
-          meanScore: mean,
-          stddev: Math.sqrt(variance)
+          detections: row.detections || 0
         };
       }
     }
 
-    // Get risk score distribution (overall_score is 0-1, convert to 0-100 scale)
-    const riskDistResult = await db.prepare(`
-      SELECT
-        CASE
-          WHEN overall_score < 0.2 THEN '0-20'
-          WHEN overall_score < 0.4 THEN '20-40'
-          WHEN overall_score < 0.6 THEN '40-60'
-          WHEN overall_score < 0.8 THEN '60-80'
-          ELSE '80-100'
-        END as bucket,
-        COUNT(*) as count
-      FROM audit_reports
-      GROUP BY bucket
-    `).all();
-
+    // Severity distribution is now computed from patterns, not overall_score
+    // Since extracting max severity from JSON in SQLite is complex, we skip this for now
     const riskScoreDistribution: Record<string, number> = {};
-    for (const row of (riskDistResult.results || []) as any[]) {
-      if (row.bucket) {
-        riskScoreDistribution[row.bucket] = row.count || 0;
-      }
-    }
 
     return c.json({
       totalAnalyzed,

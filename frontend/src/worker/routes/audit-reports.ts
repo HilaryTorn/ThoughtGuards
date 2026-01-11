@@ -55,7 +55,7 @@ auditReportsRoutes.get('/', async (c) => {
 
     // Fetch cross-validation data for all traces
     const cvQuery = `
-      SELECT conversation_id, full_result, agreement, cohens_kappa
+      SELECT conversation_id, full_result, agreement, cohens_kappa, primary_judge, secondary_judge
       FROM cross_validation_runs
       WHERE conversation_id IN (${(result.results || []).map(() => '?').join(',')})
       ORDER BY created_at DESC
@@ -71,10 +71,21 @@ auditReportsRoutes.get('/', async (c) => {
           if (!cvMap[convId]) {
             try {
               const fullResult = cv.full_result ? JSON.parse(cv.full_result as string) : null;
+              // Build _meta with proper fallbacks using database columns when full_result is missing
+              const meta = fullResult?._meta || {};
               cvMap[convId] = {
-                _meta: fullResult?._meta || {
-                  agreement_rate: cv.agreement ? 1.0 : 0.0,
-                  cohens_kappa: cv.cohens_kappa || 0,
+                _meta: {
+                  judge_1_model: meta.judge_1_model || cv.primary_judge || 'Unknown',
+                  judge_2_model: meta.judge_2_model || cv.secondary_judge || 'Unknown',
+                  judge_1_tokens: meta.judge_1_tokens || 0,
+                  judge_2_tokens: meta.judge_2_tokens || 0,
+                  agreement_rate: meta.agreement_rate ?? (cv.agreement ? 1.0 : 0.0),
+                  agreement_type: meta.agreement_type || (cv.agreement ? 'strong' : 'weak'),
+                  exact_matches: meta.exact_matches || 0,
+                  partial_matches: meta.partial_matches || 0,
+                  unmatched_j1: meta.unmatched_j1 || 0,
+                  unmatched_j2: meta.unmatched_j2 || 0,
+                  mean_similarity: meta.mean_similarity || cv.cohens_kappa || 0,
                 },
                 ...fullResult
               };
@@ -138,6 +149,17 @@ auditReportsRoutes.get('/', async (c) => {
       }
     };
 
+    // Transform Python evaluator pattern format to frontend TaxonomyPattern format
+    const transformPattern = (p: any) => ({
+      ...p,
+      triad: p.triad_pattern_id || p.triad,
+      how_code: p.labels?.HOW || p.how_code,
+      why_code: p.labels?.WHY || p.why_code,
+      target_code: p.labels?.TARGET || p.target_code,
+      pattern_confidence: p.confidence || p.pattern_confidence,
+      severity: p.severity ?? 0,
+    });
+
     // Convert to frontend-expected format (matching old audit-results format)
     const traces = (result.results || []).map((row: any) => {
       const maxSeverity = getMaxSeverity(row.patterns);
@@ -171,7 +193,7 @@ auditReportsRoutes.get('/', async (c) => {
       primaryCategory: row.primary_category || undefined,
       secondaryCategories: row.secondary_categories ? JSON.parse(row.secondary_categories) : undefined,
       detectionMetadata: row.detection_metadata ? JSON.parse(row.detection_metadata) : undefined,
-      patterns: row.patterns ? JSON.parse(row.patterns) : undefined,
+      patterns: row.patterns ? JSON.parse(row.patterns).map(transformPattern) : undefined,
       createdAt: row.created_at || new Date().toISOString(),
       updatedAt: row.created_at || new Date().toISOString(),
       crossValidation: cvMap[row.conversation_id] || undefined,

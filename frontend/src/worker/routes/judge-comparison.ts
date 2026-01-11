@@ -194,22 +194,32 @@ judgeComparisonRoutes.get('/:conversationId', async (c) => {
       }
 
       // Fallback: Transform DB row to CrossValidationResult format expected by UI
-      // Note: This is a degraded view without pattern details
+      // Try to extract _meta from full_result even if full parse failed
+      let meta: any = {};
+      if (cvResult.full_result) {
+        try {
+          const parsed = JSON.parse(cvResult.full_result as string);
+          meta = parsed._meta || {};
+        } catch (e) {
+          // Continue with empty meta
+        }
+      }
+
       const transformedResult = {
         conversation_id: cvResult.conversation_id,
         manipulation_evaluations: [], // Empty - no pattern data available from legacy records
         _meta: {
-          judge_1_model: cvResult.primary_judge,
-          judge_2_model: cvResult.secondary_judge,
-          judge_1_tokens: 0,
-          judge_2_tokens: 0,
-          agreement_type: cvResult.agreement ? 'strong' : 'weak',
-          agreement_rate: cvResult.cohens_kappa || (cvResult.agreement ? 0.9 : 0.3),
-          exact_matches: cvResult.agreement ? 1 : 0,
-          partial_matches: 0,
-          unmatched_j1: cvResult.agreement ? 0 : 1,
-          unmatched_j2: cvResult.agreement ? 0 : 1,
-          mean_similarity: cvResult.cohens_kappa || 0,
+          judge_1_model: meta.judge_1_model || cvResult.primary_judge || 'Unknown',
+          judge_2_model: meta.judge_2_model || cvResult.secondary_judge || 'Unknown',
+          judge_1_tokens: meta.judge_1_tokens || 0,
+          judge_2_tokens: meta.judge_2_tokens || 0,
+          agreement_type: meta.agreement_type || (cvResult.agreement ? 'strong' : 'weak'),
+          agreement_rate: meta.agreement_rate ?? cvResult.cohens_kappa ?? (cvResult.agreement ? 0.9 : 0.3),
+          exact_matches: meta.exact_matches ?? (cvResult.agreement ? 1 : 0),
+          partial_matches: meta.partial_matches ?? 0,
+          unmatched_j1: meta.unmatched_j1 ?? (cvResult.agreement ? 0 : 1),
+          unmatched_j2: meta.unmatched_j2 ?? (cvResult.agreement ? 0 : 1),
+          mean_similarity: meta.mean_similarity ?? cvResult.cohens_kappa ?? 0,
         }
       };
 
