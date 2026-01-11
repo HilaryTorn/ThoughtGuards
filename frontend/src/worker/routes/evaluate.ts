@@ -146,7 +146,13 @@ app.post('/', async (c) => {
       modelName,
       overallScore,
       confidenceLevel,
-      JSON.stringify(patterns.map((p: any) => p.triad_pattern_id)),
+      JSON.stringify(patterns.map((p: any) => ({
+        type: p.triad_pattern_id,
+        score: p.confidence || 0,
+        severity: p.severity ?? 0,
+        evidence: p.evidence || '',
+        labels: p.labels || {}
+      }))),
       JSON.stringify({}),
       JSON.stringify(patterns),
       JSON.stringify(meta),

@@ -573,11 +573,14 @@ export default function RedTeamLab({ settings }: RedTeamLabProps) {
                     return;
                   }
 
-                  const result = await res.json();
+                  const result = await res.json() as { report_id?: string };
                   console.log('Evaluation result:', result);
 
                   // Navigate to trace view to see results
-                  navigate(`/trace/${conversationId}`);
+                  // Use report_id from evaluate API (matches audit_reports.report_id)
+                  const traceId = result.report_id || conversationId;
+                  // Force page reload to refresh traces from DB, then navigate to the new trace
+                  window.location.href = `/traces/${traceId}`;
                 } catch (error) {
                   console.error('Evaluation error:', error);
                   alert('Failed to run evaluation. Is the Python server running?');

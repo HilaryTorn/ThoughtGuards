@@ -64,7 +64,9 @@ export interface AuditResult {
   detected_types: Array<{
     type: SycophancyType | string; // Allow string for other skill types
     score: number;
-    evidence: Evidence[];
+    severity?: number; // 1-5 scale from Python evaluator
+    evidence: Evidence[] | string;
+    labels?: { HOW?: string; WHY?: string; TARGET?: string };
     category?: string; // For multi-skill results
     skill_id?: string; // For multi-skill results
   }>;

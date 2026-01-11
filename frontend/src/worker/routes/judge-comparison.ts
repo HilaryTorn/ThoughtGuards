@@ -182,10 +182,88 @@ judgeComparisonRoutes.get('/:conversationId', async (c) => {
       if (cvResult.full_result) {
         try {
           const fullResult = JSON.parse(cvResult.full_result as string);
+
+          // Transform Python format to UI-expected format
+          // Python returns: _meta.judges_used, _meta.total_tokens, _individual_results
+          // UI expects: _meta.judge_1_model, _meta.judge_2_model, _meta.judge_1_tokens, etc.
+          const pythonMeta = fullResult._meta || {};
+          const judgesUsed = pythonMeta.judges_used || [];
+          const individualResults = fullResult._individual_results || {};
+
+          // Get individual judge results for tokens and patterns
+          const judge1Id = judgesUsed[0] || Object.keys(individualResults)[0] || 'Unknown';
+          const judge2Id = judgesUsed[1] || Object.keys(individualResults)[1] || 'Unknown';
+          const judge1Result = individualResults[judge1Id] || {};
+          const judge2Result = individualResults[judge2Id] || {};
+
+          // Calculate match statistics from aggregated patterns
+          // Python uses _n_judges_agreed per pattern, UI expects exact_matches/partial_matches/unmatched
+          const patterns = fullResult.manipulation_evaluations?.[0]?.patterns || [];
+          let exactMatches = 0;
+          let partialMatches = 0;
+          let unmatchedJ1 = 0;
+          let unmatchedJ2 = 0;
+
+          for (const pattern of patterns) {
+            const matchType = pattern._match_type;
+            const nJudgesAgreed = pattern._n_judges_agreed || 1;
+
+            if (matchType === 'exact' || nJudgesAgreed >= 2) {
+              // Both judges detected same pattern
+              exactMatches++;
+            } else if (matchType === 'partial') {
+              partialMatches++;
+            } else if (matchType === 'single_judge') {
+              if (pattern._detected_by === 'judge_1') {
+                unmatchedJ1++;
+              } else {
+                unmatchedJ2++;
+              }
+            } else if (nJudgesAgreed === 1) {
+              // Single judge detection (from Python aggregation)
+              // Check which judge detected it based on _source_judges or similar
+              const sourceJudge = pattern._source_judges?.[0] || '';
+              if (sourceJudge === judge1Id) {
+                unmatchedJ1++;
+              } else if (sourceJudge === judge2Id) {
+                unmatchedJ2++;
+              } else {
+                // Default to counting as single judge detection
+                unmatchedJ1++;
+              }
+            }
+          }
+
+          // Build UI-compatible _meta
+          const transformedMeta = {
+            judge_1_model: judge1Id,
+            judge_2_model: judge2Id,
+            judge_1_tokens: judge1Result._tokens_used || 0,
+            judge_2_tokens: judge2Result._tokens_used || 0,
+            agreement_type: pythonMeta.agreement_type || 'unknown',
+            agreement_rate: pythonMeta.agreement_rate ?? 0,
+            exact_matches: pythonMeta.exact_matches ?? exactMatches,
+            partial_matches: pythonMeta.partial_matches ?? partialMatches,
+            unmatched_j1: pythonMeta.unmatched_j1 ?? unmatchedJ1,
+            unmatched_j2: pythonMeta.unmatched_j2 ?? unmatchedJ2,
+            mean_similarity: pythonMeta.mean_similarity ?? 0,
+            total_tokens: pythonMeta.total_tokens || 0,
+            // Preserve original fields
+            ...pythonMeta,
+          };
+
+          // Also expose individual judge patterns for side-by-side comparison
+          const transformedResult = {
+            ...fullResult,
+            _meta: transformedMeta,
+            _judge_1_result: judge1Result,
+            _judge_2_result: judge2Result,
+          };
+
           return c.json({
             success: true,
             source: 'database',
-            result: fullResult,
+            result: transformedResult,
           });
         } catch (parseError) {
           console.error('Failed to parse full_result JSON:', parseError);

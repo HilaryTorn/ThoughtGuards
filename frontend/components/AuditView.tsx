@@ -611,12 +611,24 @@ const AuditView: React.FC<AuditViewProps> = ({ onResult, settings }) => {
     };
   }, [testCasesWithStatus]);
 
-  // Calculate max severity from detected_types (score is 0-1, convert to 1-5 scale)
+  // Calculate max severity - prefer patterns array (has severity directly), fallback to detected_types
   const getMaxSeverity = (result: AuditResult): number => {
+    // First try patterns (has severity directly from Python evaluator)
+    const patterns = (result as any).patterns;
+    if (patterns && Array.isArray(patterns) && patterns.length > 0) {
+      return patterns.reduce((max: number, p: any) => Math.max(max, p.severity ?? 0), 0);
+    }
+    // Fallback to detected_types
     const detected = result.detected_types;
     if (!detected || !Array.isArray(detected) || detected.length === 0) return 0;
-    const maxScore = detected.reduce((max, d) => Math.max(max, d.score ?? 0), 0);
-    return Math.ceil(maxScore * 5);
+    // Check if detected_types has severity (new format) or score (legacy)
+    return detected.reduce((max, d) => {
+      if (typeof d === 'object' && d.severity !== undefined) {
+        return Math.max(max, d.severity);
+      }
+      // Legacy format: score is 0-1, convert to 1-5
+      return Math.max(max, Math.ceil((d.score ?? 0) * 5));
+    }, 0);
   };
 
   // Severity style mapping (matches TraceDetail)

@@ -71,21 +71,61 @@ auditReportsRoutes.get('/', async (c) => {
           if (!cvMap[convId]) {
             try {
               const fullResult = cv.full_result ? JSON.parse(cv.full_result as string) : null;
-              // Build _meta with proper fallbacks using database columns when full_result is missing
-              const meta = fullResult?._meta || {};
+              // Transform Python format to UI-expected format
+              // Python returns: _meta.judges_used, _meta.total_tokens, _individual_results
+              // UI expects: _meta.judge_1_model, _meta.judge_2_model, etc.
+              const pythonMeta = fullResult?._meta || {};
+              const judgesUsed = pythonMeta.judges_used || [];
+              const individualResults = fullResult?._individual_results || {};
+
+              // Get individual judge info
+              const judge1Id = judgesUsed[0] || cv.primary_judge || Object.keys(individualResults)[0] || 'Unknown';
+              const judge2Id = judgesUsed[1] || cv.secondary_judge || Object.keys(individualResults)[1] || 'Unknown';
+              const judge1Result = individualResults[judge1Id] || {};
+              const judge2Result = individualResults[judge2Id] || {};
+
+              // Calculate match statistics from aggregated patterns
+              const patterns = fullResult?.manipulation_evaluations?.[0]?.patterns || [];
+              let exactMatches = 0;
+              let partialMatches = 0;
+              let unmatchedJ1 = 0;
+              let unmatchedJ2 = 0;
+
+              for (const pattern of patterns) {
+                const matchType = pattern._match_type;
+                const nJudgesAgreed = pattern._n_judges_agreed || 1;
+
+                if (matchType === 'exact' || nJudgesAgreed >= 2) {
+                  exactMatches++;
+                } else if (matchType === 'partial') {
+                  partialMatches++;
+                } else if (matchType === 'single_judge') {
+                  if (pattern._detected_by === 'judge_1') {
+                    unmatchedJ1++;
+                  } else {
+                    unmatchedJ2++;
+                  }
+                } else if (nJudgesAgreed === 1) {
+                  // Single judge detection - count as unmatched
+                  unmatchedJ1++;
+                }
+              }
+
               cvMap[convId] = {
                 _meta: {
-                  judge_1_model: meta.judge_1_model || cv.primary_judge || 'Unknown',
-                  judge_2_model: meta.judge_2_model || cv.secondary_judge || 'Unknown',
-                  judge_1_tokens: meta.judge_1_tokens || 0,
-                  judge_2_tokens: meta.judge_2_tokens || 0,
-                  agreement_rate: meta.agreement_rate ?? (cv.agreement ? 1.0 : 0.0),
-                  agreement_type: meta.agreement_type || (cv.agreement ? 'strong' : 'weak'),
-                  exact_matches: meta.exact_matches || 0,
-                  partial_matches: meta.partial_matches || 0,
-                  unmatched_j1: meta.unmatched_j1 || 0,
-                  unmatched_j2: meta.unmatched_j2 || 0,
-                  mean_similarity: meta.mean_similarity || cv.cohens_kappa || 0,
+                  judge_1_model: judge1Id,
+                  judge_2_model: judge2Id,
+                  judge_1_tokens: judge1Result._tokens_used || 0,
+                  judge_2_tokens: judge2Result._tokens_used || 0,
+                  agreement_rate: pythonMeta.agreement_rate ?? (cv.agreement ? 1.0 : 0.0),
+                  agreement_type: pythonMeta.agreement_type || (cv.agreement ? 'strong' : 'weak'),
+                  exact_matches: pythonMeta.exact_matches ?? exactMatches,
+                  partial_matches: pythonMeta.partial_matches ?? partialMatches,
+                  unmatched_j1: pythonMeta.unmatched_j1 ?? unmatchedJ1,
+                  unmatched_j2: pythonMeta.unmatched_j2 ?? unmatchedJ2,
+                  mean_similarity: pythonMeta.mean_similarity || cv.cohens_kappa || 0,
+                  judges_used: judgesUsed,
+                  total_tokens: pythonMeta.total_tokens || 0,
                 },
                 ...fullResult
               };
