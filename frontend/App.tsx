@@ -158,15 +158,27 @@ const App: React.FC = () => {
 
         // Migrate old/invalid model names to default
         if (parsed.auditorModel && !validModels.includes(parsed.auditorModel)) {
-          console.log(`Migrating old auditorModel "${parsed.auditorModel}" to gemini-2.0-flash`);
-          parsed.auditorModel = 'gemini-2.0-flash';
+          console.log(`Migrating old auditorModel "${parsed.auditorModel}" to sonnet`);
+          parsed.auditorModel = 'sonnet';
+          needsSave = true;
+        }
+
+        // Migrate old LiteLLM proxy models to Anthropic defaults
+        if (parsed.auditorModel === 'mistral' || parsed.auditorModel === 'compassj') {
+          console.log(`Migrating old auditorModel "${parsed.auditorModel}" to sonnet`);
+          parsed.auditorModel = 'sonnet';
+          needsSave = true;
+        }
+        if (parsed.secondaryJudgeModel === 'mistral' || parsed.secondaryJudgeModel === 'compassj') {
+          console.log(`Migrating old secondaryJudgeModel "${parsed.secondaryJudgeModel}" to haiku`);
+          parsed.secondaryJudgeModel = 'haiku';
           needsSave = true;
         }
 
         // Migrate to new cross-validation defaults if not set
         if (parsed.secondaryJudgeModel === undefined && parsed.enableCrossValidation === undefined) {
-          console.log('Setting default cross-validation: Judge B = compassj');
-          parsed.secondaryJudgeModel = 'compassj';
+          console.log('Setting default cross-validation: Judge B = haiku');
+          parsed.secondaryJudgeModel = 'haiku';
           parsed.enableCrossValidation = true;
           needsSave = true;
         }
@@ -192,7 +204,7 @@ const App: React.FC = () => {
       sensitivity: 'medium',
       riskThreshold: 70,
       activeSkills: initialActiveSkills,
-      auditorModel: 'mistral', // Mistral Nemo as Judge A
+      auditorModel: 'sonnet', // Claude Sonnet 4 as Judge A
       thinkingBudget: undefined,
       includeValidatorCoT: true,
       chatbotMode: 'helpful',
@@ -202,7 +214,7 @@ const App: React.FC = () => {
       multiRunSeed: undefined, // Optional seed for reproducibility
       // Cross-validation settings
       enableCrossValidation: true,
-      secondaryJudgeModel: 'compassj', // CompassJ as Judge B
+      secondaryJudgeModel: 'haiku', // Claude Haiku 4.5 as Judge B
     };
   });
 

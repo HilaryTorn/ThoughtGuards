@@ -361,20 +361,16 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
                 <div>
                   <label className="block text-xs text-slate-400 mb-2">Judge A (Primary)</label>
                   <select
-                    value={settings.auditorModel || 'mistral'}
+                    value={settings.auditorModel || 'sonnet'}
                     onChange={(e) => onUpdate({ ...settings, auditorModel: e.target.value })}
                     className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
                   >
-                    <optgroup label="LiteLLM Proxy (Recommended)">
-                      <option value="mistral">Mistral Nemo (LiteLLM)</option>
-                      <option value="compassj">CompassJ 7B (LiteLLM)</option>
+                    <optgroup label="Anthropic (Recommended)">
+                      <option value="sonnet">Claude Sonnet 4 (Anthropic)</option>
+                      <option value="haiku">Claude Haiku 4.5 (Anthropic)</option>
                     </optgroup>
                     <optgroup label="Google">
                       <option value="gemini-flash">Gemini 3 Flash Preview (Google)</option>
-                    </optgroup>
-                    <optgroup label="Anthropic">
-                      <option value="sonnet">Claude Sonnet 4 (Anthropic)</option>
-                      <option value="haiku">Claude Haiku 4.5 (Anthropic)</option>
                     </optgroup>
                   </select>
                 </div>
@@ -383,7 +379,7 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
                 <div>
                   <label className="block text-xs text-slate-400 mb-2">Judge B (Cross-validation)</label>
                   <select
-                    value={settings.secondaryJudgeModel || 'compassj'}
+                    value={settings.secondaryJudgeModel || 'haiku'}
                     onChange={(e) => {
                       const value = e.target.value;
                       onUpdate({
@@ -395,16 +391,12 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
                     className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
                   >
                     <option value="">None (single judge)</option>
-                    <optgroup label="LiteLLM Proxy">
-                      <option value="mistral">Mistral Nemo (LiteLLM)</option>
-                      <option value="compassj">CompassJ 7B (LiteLLM)</option>
+                    <optgroup label="Anthropic (Recommended)">
+                      <option value="sonnet">Claude Sonnet 4 (Anthropic)</option>
+                      <option value="haiku">Claude Haiku 4.5 (Anthropic)</option>
                     </optgroup>
                     <optgroup label="Google">
                       <option value="gemini-flash">Gemini 3 Flash Preview (Google)</option>
-                    </optgroup>
-                    <optgroup label="Anthropic">
-                      <option value="sonnet">Claude Sonnet 4 (Anthropic)</option>
-                      <option value="haiku">Claude Haiku 4.5 (Anthropic)</option>
                     </optgroup>
                   </select>
                   {settings.secondaryJudgeModel && (
