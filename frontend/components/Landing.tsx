@@ -125,7 +125,7 @@ const Landing: React.FC = () => {
               </p>
 
               <button
-                onClick={() => navigate('/traces')}
+                onClick={() => navigate('/traces/audit_adv_00016_retention_focused_angry_returner_gemini-2.5-flash_1768173632376')}
                 className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 rounded-lg transition-colors text-sm"
               >
                 View Traces
@@ -147,7 +147,7 @@ const Landing: React.FC = () => {
               </p>
 
               <button
-                onClick={() => {/* placeholder - will be updated with conversation ID */}}
+                onClick={() => navigate('/comparison/adv_00016_retention_focused_angry_returner_gemini-2.5-flash')}
                 className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 rounded-lg transition-colors text-sm"
               >
                 Compare Judges
