@@ -41,14 +41,8 @@ const Landing: React.FC = () => {
             sandbagging, deceptive planning, metric gaming, and fabricated tool use.
           </p>
 
-          {/* Hackathon Badge */}
-          <div className="inline-flex items-center gap-2 px-4 py-2 bg-purple-500/10 border border-purple-500/30 rounded-full text-purple-300 text-sm mb-8">
-            <Shield size={16} />
-            Built for the Apart Research AI Manipulation Hackathon
-          </div>
-
           {/* Action Buttons */}
-          <div className="flex justify-center gap-4">
+          <div className="flex justify-center gap-4 mb-8">
             <button
               onClick={() => navigate('/dashboard')}
               className="inline-flex items-center gap-2 px-6 py-3 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-400 border border-cyan-500/50 rounded-lg transition-all"
@@ -65,6 +59,25 @@ const Landing: React.FC = () => {
               <Github size={20} />
               View on GitHub
             </a>
+          </div>
+
+          {/* Hackathon Badge */}
+          <div className="inline-flex items-center gap-2 px-4 py-2 bg-purple-500/10 border border-purple-500/30 rounded-full text-purple-300 text-sm mb-6">
+            <Shield size={16} />
+            Built for the Apart Research AI Manipulation Hackathon
+          </div>
+
+          {/* Team */}
+          <div className="flex flex-wrap justify-center gap-3">
+            <a href="https://www.linkedin.com/in/hilarytorn/" target="_blank" rel="noopener noreferrer" className="text-slate-400 hover:text-cyan-400 transition-colors text-sm">Hilary Torn</a>
+            <span className="text-slate-600">·</span>
+            <a href="https://www.linkedin.com/in/haydar-ali-seker/" target="_blank" rel="noopener noreferrer" className="text-slate-400 hover:text-cyan-400 transition-colors text-sm">Haydar Ali Seker</a>
+            <span className="text-slate-600">·</span>
+            <a href="https://www.linkedin.com/in/valeriiapovergo/" target="_blank" rel="noopener noreferrer" className="text-slate-400 hover:text-cyan-400 transition-colors text-sm">Valeriia Povergo</a>
+            <span className="text-slate-600">·</span>
+            <a href="https://www.linkedin.com/in/zakhar-kogan/" target="_blank" rel="noopener noreferrer" className="text-slate-400 hover:text-cyan-400 transition-colors text-sm">Zakhar Kogan</a>
+            <span className="text-slate-600">·</span>
+            <a href="https://www.linkedin.com/in/1andonlyamit/" target="_blank" rel="noopener noreferrer" className="text-slate-400 hover:text-cyan-400 transition-colors text-sm">Amit Suthar</a>
           </div>
         </div>
       </div>
