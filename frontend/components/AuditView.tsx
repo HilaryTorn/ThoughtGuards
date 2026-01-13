@@ -711,6 +711,7 @@ const AuditView: React.FC<AuditViewProps> = ({ onResult, settings }) => {
           paginatedTestCases.map((testCase) => {
             const isRunning = testCase.status === 'running';
             const hasResult = testCase.status === 'completed' && testCase.result;
+            const hasAudit = (testCase as any).has_audit || hasResult; // Use has_audit from lightweight query
 
             const isSelected = selectedCases.has(testCase.conversation_id);
             
@@ -795,7 +796,7 @@ const AuditView: React.FC<AuditViewProps> = ({ onResult, settings }) => {
                       className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                         isRunning
                           ? 'bg-slate-800 text-slate-400 cursor-not-allowed'
-                          : hasResult
+                          : hasAudit
                           ? 'bg-slate-700/50 text-slate-400 border border-slate-600 hover:bg-slate-700'
                           : 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/50 hover:bg-cyan-500/30'
                       }`}
@@ -805,7 +806,7 @@ const AuditView: React.FC<AuditViewProps> = ({ onResult, settings }) => {
                           <Loader2 size={14} className="animate-spin inline mr-2" />
                           Running...
                         </>
-                      ) : hasResult ? (
+                      ) : hasAudit ? (
                         <>
                           <Play size={14} className="inline mr-2" />
                           Re-run
