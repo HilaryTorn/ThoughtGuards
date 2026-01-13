@@ -4,7 +4,7 @@ import { Play, CheckCircle, AlertTriangle, Loader2, FileText, X, Search, Filter,
 import { EnrichedTestCase, AuditResult, Skill, Conversation } from '../lib/types';
 // executeMultiSkillAuditWithCrossValidation removed - now using Python evaluation server
 import { executeMultiRunAudit, RunConfig } from '../lib/multiRunExecutor';
-import { loadAllTestCases } from '../lib/loadTestCases';
+import { loadTestCasesPage, PaginatedTestCases } from '../lib/loadTestCases';
 import { AppSettings } from '../types';
 import { AVAILABLE_SKILLS, CATEGORY_TO_SKILL, getSkillById } from '../lib/skillsRegistry';
 import ReasoningDisplay from './ReasoningDisplay';
@@ -43,9 +43,11 @@ const AuditView: React.FC<AuditViewProps> = ({ onResult, settings }) => {
 
   // State
   const [allTestCases, setAllTestCases] = useState<EnrichedTestCase[]>([]);
+  const [totalItems, setTotalItems] = useState(0); // Total count from server for pagination
   const [isLoadingCases, setIsLoadingCases] = useState(true);
   const [isRefreshingCases, setIsRefreshingCases] = useState(false);
   const [testCasesWithStatus, setTestCasesWithStatus] = useState<Map<string, TestCaseWithStatus>>(new Map());
+  const [currentPage, setCurrentPage] = useState(1); // Moved up for use in data loading useEffect
 
   // Load available models and report counts
   useEffect(() => {
@@ -70,11 +72,11 @@ const AuditView: React.FC<AuditViewProps> = ({ onResult, settings }) => {
     loadModels();
   }, []);
 
-  // Load all test cases and existing audit results on mount and when component becomes visible
+  // Load test cases page from server (paginated)
   useEffect(() => {
     let mounted = true;
-    
-    const loadCases = async () => {
+
+    const loadPage = async () => {
       // If we already have test cases, show refreshing state instead of blocking
       if (allTestCases.length > 0) {
         setIsRefreshingCases(true);
@@ -82,112 +84,94 @@ const AuditView: React.FC<AuditViewProps> = ({ onResult, settings }) => {
         setIsLoadingCases(true);
       }
       setError(null);
+
       try {
-        console.log('Starting to load test cases...');
-        const cases = await loadAllTestCases();
-        console.log(`Loaded ${cases.length} total test cases`);
-        
-        // Load existing audit results from database
+        console.log(`Loading page ${currentPage} with ${ITEMS_PER_PAGE} items per page...`);
+        const result = await loadTestCasesPage(currentPage, ITEMS_PER_PAGE);
+        console.log(`Loaded ${result.items.length} test cases (total: ${result.total})`);
+
+        // Fetch audit status for just these conversations (not all 10k)
+        const conversationIds = result.items.map(tc => tc.conversation_id);
         let existingAudits: Map<string, AuditResult> = new Map();
-        try {
-          const auditResponse = await fetch('/api/audit-reports?limit=10000');
-          if (auditResponse.ok) {
-            const auditData = await auditResponse.json();
-            if (auditData.traces && Array.isArray(auditData.traces)) {
-              // Create a map of conversation_id -> audit result
-              auditData.traces.forEach((trace: any) => {
-                // Match by conversation_id
-                if (trace.conversationId) {
-                  // Reconstruct AuditResult from trace data
-                  const auditResult: AuditResult = {
-                    id: trace.auditId || trace.id.replace('audit-', ''),
-                    conversation_id: trace.conversationId,
-                    timestamp: trace.createdAt || new Date().toISOString(),
-                    skill_id: trace.skillId || '',
-                    model_name: trace.modelName || '',
-                    overall_score: trace.overallScore !== undefined ? trace.overallScore : (trace.riskScore !== undefined ? trace.riskScore / 100 : 0),
-                    confidence: (trace.confidence || 'low') as 'low' | 'medium' | 'high',
-                    detected_types: trace.detectedTypes || [],
-                    metrics: trace.metrics || {},
-                    recommendations: trace.recommendations || [],
-                    limitations: trace.limitations || [],
-                    usage: trace.usage,
-                    // Multi-skill fields
-                    skill_results: (trace as any).skillResults,
-                    combined_score: (trace as any).combinedScore,
-                    primary_category: (trace as any).primaryCategory,
-                    secondary_categories: (trace as any).secondaryCategories,
-                    detection_metadata: (trace as any).detectionMetadata,
-                  };
-                  // Only keep the most recent audit for each conversation
-                  const existing = existingAudits.get(trace.conversationId);
-                  if (!existing || new Date(trace.createdAt) > new Date(existing.timestamp)) {
-                    existingAudits.set(trace.conversationId, auditResult);
+
+        if (conversationIds.length > 0) {
+          try {
+            // Fetch audit reports for only the current page's conversations
+            const auditResponse = await fetch(`/api/audit-reports?conversation_ids=${conversationIds.join(',')}&limit=${ITEMS_PER_PAGE}`);
+            if (auditResponse.ok) {
+              const auditData = await auditResponse.json() as { traces?: any[] };
+              if (auditData.traces && Array.isArray(auditData.traces)) {
+                auditData.traces.forEach((trace: any) => {
+                  if (trace.conversationId) {
+                    const auditResult: AuditResult = {
+                      id: trace.auditId || trace.id.replace('audit-', ''),
+                      conversation_id: trace.conversationId,
+                      timestamp: trace.createdAt || new Date().toISOString(),
+                      skill_id: trace.skillId || '',
+                      model_name: trace.modelName || '',
+                      overall_score: trace.overallScore !== undefined ? trace.overallScore : (trace.riskScore !== undefined ? trace.riskScore / 100 : 0),
+                      confidence: (trace.confidence || 'low') as 'low' | 'medium' | 'high',
+                      detected_types: trace.detectedTypes || [],
+                      metrics: trace.metrics || {},
+                      recommendations: trace.recommendations || [],
+                      limitations: trace.limitations || [],
+                      usage: trace.usage,
+                      skill_results: (trace as any).skillResults,
+                      combined_score: (trace as any).combinedScore,
+                      primary_category: (trace as any).primaryCategory,
+                      secondary_categories: (trace as any).secondaryCategories,
+                      detection_metadata: (trace as any).detectionMetadata,
+                    };
+                    const existing = existingAudits.get(trace.conversationId);
+                    if (!existing || new Date(trace.createdAt) > new Date(existing.timestamp)) {
+                      existingAudits.set(trace.conversationId, auditResult);
+                    }
                   }
-                }
-              });
-              console.log(`Loaded ${existingAudits.size} existing audit results from database`);
+                });
+                console.log(`Loaded ${existingAudits.size} audit results for current page`);
+              }
             }
+          } catch (auditError) {
+            console.warn('Failed to load audit results:', auditError);
           }
-        } catch (auditError) {
-          console.warn('Failed to load existing audit results:', auditError);
         }
-        
+
         if (mounted) {
-          setAllTestCases(cases);
-          // Preserve existing results from state, then merge with database results
+          setAllTestCases(result.items);
+          setTotalItems(result.total);
+
+          // Build status map for current page
           setTestCasesWithStatus(prev => {
             const map = new Map<string, TestCaseWithStatus>();
-            cases.forEach(tc => {
-              // Check if we have an existing result in state (from a recent audit)
+            result.items.forEach((tc: EnrichedTestCase) => {
               const existingInState = prev.get(tc.conversation_id);
-              // Check if we have an audit result from database
               const existingAudit = existingAudits.get(tc.conversation_id);
-              
-              // Prefer state result if it's more recent, otherwise use database result
+
               if (existingInState && existingInState.status === 'completed' && existingInState.result) {
-                // Check if database has a newer result
                 if (existingAudit && new Date(existingAudit.timestamp) > new Date(existingInState.result.timestamp)) {
-                  map.set(tc.conversation_id, { 
-                    ...tc, 
-                    status: 'completed' as TestCaseStatus,
-                    result: existingAudit
-                  });
+                  map.set(tc.conversation_id, { ...tc, status: 'completed' as TestCaseStatus, result: existingAudit });
                 } else {
-                  // Keep the existing state result
                   map.set(tc.conversation_id, existingInState);
                 }
               } else if (existingAudit) {
-                // Use database result
-                map.set(tc.conversation_id, { 
-                  ...tc, 
-                  status: 'completed' as TestCaseStatus,
-                  result: existingAudit
-                });
+                map.set(tc.conversation_id, { ...tc, status: 'completed' as TestCaseStatus, result: existingAudit });
+              } else if (existingInState && existingInState.status === 'running') {
+                map.set(tc.conversation_id, existingInState);
               } else {
-                // No audit result - mark as pending
-                // But preserve running status if it was running
-                if (existingInState && existingInState.status === 'running') {
-                  map.set(tc.conversation_id, existingInState);
-                } else {
-                  map.set(tc.conversation_id, { ...tc, status: 'pending' as TestCaseStatus });
-                }
+                map.set(tc.conversation_id, { ...tc, status: 'pending' as TestCaseStatus });
               }
             });
             return map;
           });
-          if (cases.length === 0 && allTestCases.length === 0) {
+
+          if (result.total === 0) {
             setError('NO_CONVERSATIONS');
           }
         }
       } catch (error: any) {
         console.error('Failed to load test cases:', error);
-        // Only show error if we don't have existing data
         if (allTestCases.length === 0) {
           setError(`Failed to load test cases: ${error.message || error}`);
-        } else {
-          // If we have existing data, just log the error but keep showing existing data
-          console.warn('Failed to refresh test cases, using existing data:', error);
         }
       } finally {
         if (mounted) {
@@ -197,99 +181,39 @@ const AuditView: React.FC<AuditViewProps> = ({ onResult, settings }) => {
       }
     };
 
-    loadCases();
-    
+    loadPage();
+
     return () => {
       mounted = false;
     };
-  }, []); // Load on mount
+  }, [currentPage]); // Reload when page changes
 
-  // Reload audit results when component becomes visible (user navigates back to tab)
+  // Reload current page when tab becomes visible (lightweight - only current page)
   useEffect(() => {
-    if (allTestCases.length === 0) return; // Don't reload if test cases aren't loaded yet
-    
-    const reloadAudits = async () => {
-      try {
-        const auditResponse = await fetch('/api/audit-reports?limit=10000');
-        if (auditResponse.ok) {
-          const auditData = await auditResponse.json();
-          if (auditData.traces && Array.isArray(auditData.traces)) {
-            const existingAudits: Map<string, AuditResult> = new Map();
-            auditData.traces.forEach((trace: any) => {
-              if (trace.conversationId) {
-                const auditResult: AuditResult = {
-                  id: trace.auditId || trace.id.replace('audit-', ''),
-                  conversation_id: trace.conversationId,
-                  timestamp: trace.createdAt || new Date().toISOString(),
-                  skill_id: trace.skillId || '',
-                  model_name: trace.modelName || '',
-                  overall_score: trace.overallScore !== undefined ? trace.overallScore : (trace.riskScore !== undefined ? trace.riskScore / 100 : 0),
-                  confidence: (trace.confidence || 'low') as 'low' | 'medium' | 'high',
-                  detected_types: trace.detectedTypes || [],
-                  metrics: trace.metrics || {},
-                  recommendations: trace.recommendations || [],
-                  limitations: trace.limitations || [],
-                  usage: trace.usage,
-                };
-                const existing = existingAudits.get(trace.conversationId);
-                if (!existing || new Date(trace.createdAt) > new Date(existing.timestamp)) {
-                  existingAudits.set(trace.conversationId, auditResult);
-                }
-              }
-            });
-            
-            // Update test cases with audit results
-            setTestCasesWithStatus(prev => {
-              const map = new Map(prev);
-              existingAudits.forEach((auditResult, conversationId) => {
-                const existing = map.get(conversationId);
-                if (existing) {
-                  map.set(conversationId, {
-                    ...existing,
-                    status: 'completed' as TestCaseStatus,
-                    result: auditResult
-                  });
-                }
-              });
-              return map;
-            });
-            console.log(`Reloaded ${existingAudits.size} audit results`);
-          }
-        }
-      } catch (error) {
-        console.warn('Failed to reload audit results:', error);
-      }
-    };
-    
-    // Reload when component becomes visible
+    if (allTestCases.length === 0) return;
+
     const handleVisibilityChange = () => {
       if (!document.hidden) {
-        reloadAudits();
+        // Trigger a reload of the current page by updating a dependency
+        // The main useEffect will handle fetching
+        setIsRefreshingCases(true);
+        loadTestCasesPage(currentPage, ITEMS_PER_PAGE).then(result => {
+          setAllTestCases(result.items);
+          setTotalItems(result.total);
+          setIsRefreshingCases(false);
+        });
       }
     };
-    
-    // Also reload on focus (when user switches back to tab)
-    const handleFocus = () => {
-      reloadAudits();
-    };
-    
+
     document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('focus', handleFocus);
-    
-    // Initial reload
-    reloadAudits();
-    
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('focus', handleFocus);
-    };
-  }, [allTestCases.length]);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [allTestCases.length, currentPage]);
   
   const [selectedTestCase, setSelectedTestCase] = useState<EnrichedTestCase | null>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<TestCaseStatus | 'all'>('all');
-  const [currentPage, setCurrentPage] = useState(1);
+  // currentPage state is declared earlier (line 50) for use in data loading useEffect
   const [autoRunEnabled, setAutoRunEnabled] = useState(false);
   const [autoRunQueue, setAutoRunQueue] = useState<string[]>([]);
   const [currentlyRunning, setCurrentlyRunning] = useState<string | null>(null);
@@ -328,12 +252,10 @@ const AuditView: React.FC<AuditViewProps> = ({ onResult, settings }) => {
     return filtered;
   }, [testCasesWithStatus, searchQuery, filterStatus]);
 
-  // Pagination
-  const totalPages = Math.ceil(filteredTestCases.length / ITEMS_PER_PAGE);
-  const paginatedTestCases = useMemo(() => {
-    const start = (currentPage - 1) * ITEMS_PER_PAGE;
-    return filteredTestCases.slice(start, start + ITEMS_PER_PAGE);
-  }, [filteredTestCases, currentPage]);
+  // Pagination - uses totalItems from server for accurate page count
+  const totalPages = Math.ceil(totalItems / ITEMS_PER_PAGE);
+  // With server-side pagination, filteredTestCases already contains just the current page
+  const paginatedTestCases = filteredTestCases;
 
   // Run audit
   const handleRunAudit = useCallback(async (testCase: EnrichedTestCase) => {
@@ -983,7 +905,7 @@ const AuditView: React.FC<AuditViewProps> = ({ onResult, settings }) => {
       {totalPages > 1 && (
         <div className="flex items-center justify-between">
           <div className="text-sm text-slate-400">
-            Showing {(currentPage - 1) * ITEMS_PER_PAGE + 1} to {Math.min(currentPage * ITEMS_PER_PAGE, filteredTestCases.length)} of {filteredTestCases.length}
+            Showing {(currentPage - 1) * ITEMS_PER_PAGE + 1} to {Math.min(currentPage * ITEMS_PER_PAGE, totalItems)} of {totalItems}
           </div>
           <div className="flex items-center gap-2">
             <button

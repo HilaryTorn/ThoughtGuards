@@ -1,6 +1,52 @@
 import { EnrichedTestCase } from './types';
 
+export interface PaginatedTestCases {
+  items: EnrichedTestCase[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
 /**
+ * Load a single page of test cases from database via API
+ * Uses server-side pagination for better performance with large datasets
+ */
+export async function loadTestCasesPage(
+  page: number = 1,
+  pageSize: number = 20
+): Promise<PaginatedTestCases> {
+  try {
+    const offset = (page - 1) * pageSize;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+    const response = await fetch(`/api/conversations?limit=${pageSize}&offset=${offset}`, {
+      signal: controller.signal
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const data = await response.json() as { conversations?: any[]; total?: number };
+    const conversations = data.conversations || [];
+
+    return {
+      items: conversations.map((conv: any) => convertToTestCase(conv)),
+      total: data.total || 0,
+      page,
+      pageSize
+    };
+  } catch (error) {
+    console.error('Failed to load test cases page:', error);
+    return { items: [], total: 0, page, pageSize };
+  }
+}
+
+/**
+ * @deprecated Use loadTestCasesPage() for better performance with large datasets
  * Load all test cases from database via API
  *
  * To import conversations, use the CLI:
