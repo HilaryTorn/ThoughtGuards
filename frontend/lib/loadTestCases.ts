@@ -8,8 +8,8 @@ export interface PaginatedTestCases {
 }
 
 /**
- * Load a single page of test cases from database via API
- * Uses server-side pagination for better performance with large datasets
+ * Load a single page of test cases from database via API (lightweight - metadata only)
+ * Uses the /list endpoint which skips N+1 queries for turns/tool_calls
  */
 export async function loadTestCasesPage(
   page: number = 1,
@@ -17,14 +17,7 @@ export async function loadTestCasesPage(
 ): Promise<PaginatedTestCases> {
   try {
     const offset = (page - 1) * pageSize;
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
-
-    const response = await fetch(`/api/conversations?limit=${pageSize}&offset=${offset}`, {
-      signal: controller.signal
-    });
-
-    clearTimeout(timeoutId);
+    const response = await fetch(`/api/conversations/list?limit=${pageSize}&offset=${offset}`);
 
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
@@ -34,7 +27,7 @@ export async function loadTestCasesPage(
     const conversations = data.conversations || [];
 
     return {
-      items: conversations.map((conv: any) => convertToTestCase(conv)),
+      items: conversations.map((conv: any) => convertToLightweightTestCase(conv)),
       total: data.total || 0,
       page,
       pageSize
@@ -42,6 +35,55 @@ export async function loadTestCasesPage(
   } catch (error) {
     console.error('Failed to load test cases page:', error);
     return { items: [], total: 0, page, pageSize };
+  }
+}
+
+/**
+ * Convert lightweight conversation metadata to EnrichedTestCase
+ * Note: turns array will be empty - fetch full details with loadFullConversation()
+ */
+function convertToLightweightTestCase(conv: any): EnrichedTestCase {
+  return {
+    conversation_id: conv.conversation_id,
+    displayName: inferDisplayName(conv),
+    category: inferCategory(conv),
+    display_type: conv.label === 'adversarial' || conv.expected_manipulation
+      ? 'problematic'
+      : 'acceptable',
+    turns: [], // Empty - will be loaded on demand
+    metadata: {
+      expected_score: conv.expected_manipulation ? '> 0.7' : '< 0.3',
+      note: `Mode: ${conv.chatbot_mode || 'unknown'}, Label: ${conv.label || 'unknown'}`,
+      tags: [
+        conv.chatbot_mode,
+        conv.chatbot_provider,
+        conv.chatbot_model,
+        conv.label,
+      ].filter(Boolean),
+      group: 'Database',
+    },
+    // Extra fields from lightweight query
+    turn_count: conv.turn_count || 0,
+    first_message: conv.first_message || '',
+    has_audit: Boolean(conv.has_audit),
+  } as EnrichedTestCase & { turn_count: number; first_message: string; has_audit: boolean };
+}
+
+/**
+ * Load full conversation details (with turns and tool_calls)
+ * Use this when user clicks on a conversation to view details
+ */
+export async function loadFullConversation(conversationId: string): Promise<EnrichedTestCase | null> {
+  try {
+    const response = await fetch(`/api/conversations/${conversationId}`);
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    const conv = await response.json();
+    return convertToTestCase(conv);
+  } catch (error) {
+    console.error('Failed to load full conversation:', error);
+    return null;
   }
 }
 

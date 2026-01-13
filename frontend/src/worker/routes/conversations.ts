@@ -7,6 +7,64 @@ import type { Env } from '../index';
 
 export const conversationsRoutes = new Hono<{ Bindings: Env }>();
 
+// Lightweight list endpoint - returns only metadata, no turns/tool_calls
+// Use this for the Queue page to avoid N+1 queries
+conversationsRoutes.get('/list', async (c) => {
+  const db = c.env.DB;
+  const limit = Math.min(parseInt(c.req.query('limit') || '20'), 100);
+  const offset = parseInt(c.req.query('offset') || '0');
+  const label = c.req.query('label');
+
+  try {
+    let query = `
+      SELECT
+        c.conversation_id,
+        c.customer_id,
+        c.chatbot_mode,
+        c.chatbot_provider,
+        c.chatbot_model,
+        c.started_at,
+        c.label,
+        c.expected_manipulation,
+        (SELECT COUNT(*) FROM conversation_turns WHERE conversation_id = c.conversation_id) as turn_count,
+        (SELECT content FROM conversation_turns WHERE conversation_id = c.conversation_id ORDER BY turn_number LIMIT 1) as first_message,
+        EXISTS(SELECT 1 FROM audit_reports WHERE conversation_id = c.conversation_id) as has_audit
+      FROM conversations c
+      WHERE 1=1
+    `;
+    const params: any[] = [];
+
+    if (label) {
+      query += ' AND c.label = ?';
+      params.push(label);
+    }
+
+    query += ' ORDER BY c.started_at DESC LIMIT ? OFFSET ?';
+    params.push(limit, offset);
+
+    const result = await db.prepare(query).bind(...params).all();
+
+    // Get total count
+    let countQuery = 'SELECT COUNT(*) as count FROM conversations WHERE 1=1';
+    const countParams: any[] = [];
+    if (label) {
+      countQuery += ' AND label = ?';
+      countParams.push(label);
+    }
+    const countResult = await db.prepare(countQuery).bind(...countParams).first<{ count: number }>();
+
+    return c.json({
+      conversations: result.results || [],
+      total: countResult?.count || 0,
+      limit,
+      offset
+    });
+  } catch (error: any) {
+    console.error('Error fetching conversations list:', error);
+    return c.json({ error: error.message || 'Failed to fetch conversations' }, 500);
+  }
+});
+
 // Get all conversations with pagination (includes turns for each conversation)
 conversationsRoutes.get('/', async (c) => {
   const db = c.env.DB;
